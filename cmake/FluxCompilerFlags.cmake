@@ -14,25 +14,37 @@ function(flux_target_compiler_flags target)
         set(is_x86 TRUE)
     endif()
 
+    set(is_arm64 FALSE)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
+        set(is_arm64 TRUE)
+    endif()
+
     #################### ALL BUILDS ####################
     set(common_flags
         -Wall -Wextra -Wpedantic
         -Wshadow -Wconversion -Wsign-conversion
         -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual
         -Wnull-dereference -Wdouble-promotion
-        -Wformat=2 -Wimplicit-fallthrough
-        -fstack-protector-strong)
+        -Wformat -Wformat=2 -Wimplicit-fallthrough
+        -Wfloat-equal
+        -fstack-protector-strong
+        -fstrict-flex-arrays=3
+        -fno-delete-null-pointer-checks)
 
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         list(APPEND common_flags -fstack-clash-protection)
         if(is_x86)
             list(APPEND common_flags -fcf-protection=full)
+        elseif(is_arm64)
+            list(APPEND common_flags -mbranch-protection=standard)
         endif()
     endif()
 
     #################### DEBUG ####################
     set(debug_flags
-        -fno-omit-frame-pointer)
+        -fno-omit-frame-pointer
+        -ftrivial-auto-var-init=pattern
+        -U_FORTIFY_SOURCE)
 
     set(debug_defines
         _GLIBCXX_ASSERTIONS
@@ -44,7 +56,11 @@ function(flux_target_compiler_flags target)
     endif()
 
     #################### RELEASE ####################
-    set(release_flags)
+    set(release_flags
+        -ftrivial-auto-var-init=zero)
+
+    set(release_defines
+        _LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST)
 
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         list(APPEND release_flags -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3)
@@ -60,7 +76,8 @@ function(flux_target_compiler_flags target)
         "$<${is_release}:${release_flags}>")
 
     target_compile_definitions(${target} PRIVATE
-        "$<${is_debug}:${debug_defines}>")
+        "$<${is_debug}:${debug_defines}>"
+        "$<${is_release}:${release_defines}>")
 
     target_link_options(${target} PRIVATE
         "$<${is_debug}:${sanitizers}>"
