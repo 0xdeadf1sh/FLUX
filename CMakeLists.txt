@@ -6,6 +6,9 @@ project(FLUX
     DESCRIPTION "3D Game Engine"
     LANGUAGES CXX)
 
+list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
+include(FluxCompilerFlags)
+
 #################### GLOBAL DEFAULTS ####################
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
     message(FATAL_ERROR "In-source builds are not allowed, use cmake -B build.")
@@ -51,6 +54,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 set_target_properties(${PROJECT_NAME} PROPERTIES
     CXX_EXTENSIONS OFF
     COMPILE_WARNING_AS_ERROR ON)
+
+flux_target_compiler_flags(${PROJECT_NAME})
 
 #################### SECURITY ####################
 include(CheckPIESupported)
