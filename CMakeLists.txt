@@ -44,7 +44,8 @@ target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_26)
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     GLFW_INCLUDE_NONE
-    GLM_FORCE_DEPTH_ZERO_TO_ONE)
+    GLM_FORCE_DEPTH_ZERO_TO_ONE
+    VULKAN_HPP_NO_CONSTRUCTORS)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Vulkan::Vulkan
