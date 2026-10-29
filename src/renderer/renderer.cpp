@@ -1,15 +1,15 @@
 #include "renderer.hpp"
 #include "../common/utils.hpp"
-#include "vulkan/vulkan.hpp"
 
+#include "vulkan/vulkan.hpp"
 #include <GLFW/glfw3.h>
+
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <cstring>
 #include <vector>
-#include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_core.h>
+#include <optional>
 
 namespace flux
 {
@@ -22,6 +22,7 @@ namespace flux
         createInstance();
         createDebugMessenger();
         pickPhysicalDevice();
+        createLogicalDevice();
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -386,6 +387,78 @@ namespace flux
         {
             spdlog::info("found suitable logical device");
         }
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::createLogicalDevice()
+    {
+        const std::vector<vk::QueueFamilyProperties> queueFamilyProperties
+        { m_physicalDevice.getQueueFamilyProperties() };
+
+        uint32_t graphicsFamilyInd{};
+        std::optional<vk::QueueFamilyProperties> queueFamilyProp{};
+
+        for (const auto& prop : queueFamilyProperties)
+        {
+            if (prop.queueFlags & vk::QueueFlagBits::eGraphics)
+            {
+                queueFamilyProp = prop;
+                break;
+            }
+
+            ++graphicsFamilyInd;
+        }
+
+        if (!queueFamilyProp)
+        {
+            throw std::runtime_error{"couldn't find queue family for graphics!"};
+        }
+
+        constexpr float priority{ 0.5f };
+
+        const vk::DeviceQueueCreateInfo deviceQueueCreateInfo
+        {
+            .queueFamilyIndex   = graphicsFamilyInd,
+            .queueCount         = 1,
+            .pQueuePriorities   = &priority,
+        };
+
+        // constexpr vk::PhysicalDeviceFeatures deviceFeatures{};
+
+        const vk::StructureChain
+        <
+            vk::PhysicalDeviceFeatures2,
+            vk::PhysicalDeviceVulkan11Features,
+            vk::PhysicalDeviceVulkan13Features,
+            vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
+        >
+        featureChain
+        {
+            {},                         // vk::PhysicalDeviceFeatures2
+            { .shaderDrawParameters     = true },
+            { .dynamicRendering         = true },
+            { .extendedDynamicState     = true },
+        };
+
+        const std::vector<const char*> requiredDeviceExtensions
+        {
+            vk::KHRSwapchainExtensionName,
+        };
+
+        const vk::DeviceCreateInfo createInfo
+        {
+            .pNext                      = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+            .queueCreateInfoCount       = 1,
+            .pQueueCreateInfos          = &deviceQueueCreateInfo,
+            .enabledExtensionCount      = static_cast<uint32_t>(requiredDeviceExtensions.size()),
+            .ppEnabledExtensionNames    = &requiredDeviceExtensions[0],
+        };
+
+        m_device = vk::raii::Device(m_physicalDevice, createInfo);
+        spdlog::info("logical device is created");
+
+        m_graphicsQueue = vk::raii::Queue(m_device, graphicsFamilyInd, 0);
+        spdlog::info("graphics queue is created");
     }
 
     ///////////////////////////////////////////////////////////////////////////
