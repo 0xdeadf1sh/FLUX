@@ -30,6 +30,7 @@ endif()
 find_package(Vulkan 1.4 REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(glm REQUIRED)
+find_package(spdlog REQUIRED)
 
 #################### EXECUTABLE ####################
 add_executable(${PROJECT_NAME})
@@ -51,7 +52,8 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Vulkan::Vulkan
     glfw
-    glm::glm)
+    glm::glm
+    spdlog::spdlog)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     CXX_EXTENSIONS OFF
