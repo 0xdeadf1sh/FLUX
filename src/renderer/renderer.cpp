@@ -8,6 +8,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <cstring>
+#include <system_error>
 #include <vector>
 #include <optional>
 
@@ -387,7 +388,10 @@ namespace flux
                 features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState
             };
 
-            if (!supportsRequiredFeatures)
+            if (!supportsRequiredFeatures                                               ||
+                physicalDevice.getSurfaceCapabilitiesKHR(*m_surface).maxImageCount < 1  ||
+                physicalDevice.getSurfaceFormatsKHR(*m_surface).empty()                 ||
+                physicalDevice.getSurfacePresentModesKHR(*m_surface).empty())
             {
                 continue;
             }
