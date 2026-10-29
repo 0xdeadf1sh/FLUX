@@ -40,6 +40,7 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         void createInstance();
         void createDebugMessenger();
+        void createSurface();
         void pickPhysicalDevice();
         void createLogicalDevice();
 

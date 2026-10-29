@@ -21,6 +21,7 @@ namespace flux
         createWindow();
         createInstance();
         createDebugMessenger();
+        createSurface();
         pickPhysicalDevice();
         createLogicalDevice();
     }
@@ -285,6 +286,21 @@ namespace flux
     }
 
     ///////////////////////////////////////////////////////////////////////////
+    void renderer::createSurface()
+    {
+        VkSurfaceKHR surface{};
+
+        if (glfwCreateWindowSurface(*m_instance, m_window, nullptr, &surface))
+        {
+            throw std::runtime_error{"failed to create window surface!"};
+        }
+
+        m_surface = vk::raii::SurfaceKHR(m_instance, surface);
+
+        spdlog::info("created window surface");
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
     void renderer::pickPhysicalDevice()
     {
         const auto physicalDevices{ m_instance.enumeratePhysicalDevices() };
@@ -393,23 +409,23 @@ namespace flux
     void renderer::createLogicalDevice()
     {
         const std::vector<vk::QueueFamilyProperties> queueFamilyProperties
-        { m_physicalDevice.getQueueFamilyProperties() };
-
-        uint32_t graphicsFamilyInd{};
-        std::optional<vk::QueueFamilyProperties> queueFamilyProp{};
-
-        for (const auto& prop : queueFamilyProperties)
         {
-            if (prop.queueFlags & vk::QueueFlagBits::eGraphics)
+            m_physicalDevice.getQueueFamilyProperties()
+        };
+
+        uint32_t graphicsFamilyInd{ ~0U };
+
+        for (uint32_t i{}; i < queueFamilyProperties.size(); ++i)
+        {
+            if ((queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics) &&
+                m_physicalDevice.getSurfaceSupportKHR(i, *m_surface))
             {
-                queueFamilyProp = prop;
+                graphicsFamilyInd = i;
                 break;
             }
-
-            ++graphicsFamilyInd;
         }
 
-        if (!queueFamilyProp)
+        if (graphicsFamilyInd == ~0U)
         {
             throw std::runtime_error{"couldn't find queue family for graphics!"};
         }
