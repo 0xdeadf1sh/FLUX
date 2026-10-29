@@ -25,9 +25,9 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         //////////////////////////// GLOBAL CONSTANTS /////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        static constexpr const char* m_rendererName { "FLUX Engine" };
-        static constexpr int32_t m_rendererVersion  { VK_MAKE_VERSION(0, 1, 0) };
-        static constexpr uint32_t m_stringMaxLen    { 128 };
+        static constexpr const char* m_rendererName         { "FLUX Engine" };
+        static constexpr int32_t m_rendererVersion          { VK_MAKE_VERSION(0, 1, 0) };
+        static constexpr uint32_t m_stringMaxLen            { 128 };
 
     private:
         ///////////////////////////////////////////////////////////////////////////
@@ -39,6 +39,7 @@ namespace flux
         ///////////////////////////// INITIALIZATION //////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         void createInstance();
+        void createDebugMessenger();
 
         ///////////////////////////////////////////////////////////////////////////
         /////////////////////////////// RENDER LOOP ///////////////////////////////
@@ -53,15 +54,16 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         //////////////////////////////// WINDOWING ////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        int32_t m_windowWidth       { 1280 };
-        int32_t m_windowHeight      { 720 };
-        const char* m_windowTitle   { "FLUX" };
-        GLFWwindow* m_window        {};
+        int32_t m_windowWidth                               { 1280 };
+        int32_t m_windowHeight                              { 720 };
+        const char* m_windowTitle                           { "FLUX" };
+        GLFWwindow* m_window                                {};
 
         ///////////////////////////////////////////////////////////////////////////
         ///////////////////////////// VULKAN OBJECTS //////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        vk::raii::Context m_context{};
-        vk::raii::Instance m_instance{ nullptr };
+        vk::raii::Context m_context                         {};
+        vk::raii::Instance m_instance                       { nullptr };
+        vk::raii::DebugUtilsMessengerEXT m_debugMessenger   { nullptr };
     };
 }
