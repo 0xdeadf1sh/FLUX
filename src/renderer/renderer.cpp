@@ -21,6 +21,7 @@ namespace flux
         createWindow();
         createInstance();
         createDebugMessenger();
+        pickPhysicalDevice();
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -40,10 +41,10 @@ namespace flux
     {
         if (!glfwInit())
         {
-            throw std::runtime_error{"renderer::createWindow(): glfwInit() failed!"};
+            throw std::runtime_error{"glfwInit() failed!"};
         }
 
-        spdlog::info("Initialized GLFW: {}", glfwGetVersionString());
+        spdlog::info("initialized GLFW: {}", glfwGetVersionString());
 
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
@@ -53,10 +54,10 @@ namespace flux
                                           m_windowTitle,
                                           nullptr, nullptr)))
         {
-            throw std::runtime_error{"renderer::createWindow(): glfwCreateWindow() failed!"};
+            throw std::runtime_error{"glfwCreateWindow() failed!"};
         }
 
-        spdlog::info("Opened a GLFW window: w = {}, h = {}", m_windowWidth,
+        spdlog::info("opened a GLFW window: w = {}, h = {}", m_windowWidth,
                                                              m_windowHeight);
     }
 
@@ -143,10 +144,10 @@ namespace flux
 
         if (!glfwExtensionCount)
         {
-            throw std::runtime_error{"renderer::createInstance(): no GLFW extensions found!"};
+            throw std::runtime_error{"no GLFW extensions found!"};
         }
 
-        spdlog::info("Number of required GLFW extensions: {}", glfwExtensionCount);
+        spdlog::info("number of required GLFW extensions: {}", glfwExtensionCount);
         for (uint32_t i{}; i < glfwExtensionCount; ++i)
         {
             spdlog::info("\t{}", glfwExtensions[i]);
@@ -164,7 +165,7 @@ namespace flux
         requiredExtensions.push_back(vk::EXTDebugUtilsExtensionName);
 #endif
 
-        spdlog::info("Total number of required extensions: {}", requiredExtensions.size());
+        spdlog::info("total number of required extensions: {}", requiredExtensions.size());
         for (uint32_t i{}; i < requiredExtensions.size(); ++i)
         {
             spdlog::info("\t{}", requiredExtensions[i]);
@@ -173,7 +174,7 @@ namespace flux
         uint32_t extensionBits{};
         const auto extensionProperties{ m_context.enumerateInstanceExtensionProperties() };
 
-        spdlog::info("Total number of extensions: {}", extensionProperties.size());
+        spdlog::info("total number of extensions: {}", extensionProperties.size());
         for (const auto& ext : extensionProperties)
         {
             spdlog::info("\t{}", ext.extensionName.cbegin());
@@ -186,13 +187,14 @@ namespace flux
                 if (!std::strncmp(requiredExtensions[i], prop.extensionName, m_stringMaxLen))
                 {
                     extensionBits |= (1U << i);
+                    break;
                 }
             }
         }
 
-        if (!utils::isPowerOf2(extensionBits + 1))
+        if (utils::countBits(extensionBits) != requiredExtensions.size())
         {
-            throw std::runtime_error{"renderer::createInstance(): required GLFW extensions not found!"};
+            throw std::runtime_error{"required extensions not found!"};
         }
 
         uint32_t validationLayersBits{};
@@ -203,14 +205,14 @@ namespace flux
 #endif
         };
 
-        spdlog::info("Number of required validation layers: {}", validationLayers.size());
+        spdlog::info("number of required validation layers: {}", validationLayers.size());
         for (const auto& layerName : validationLayers)
         {
             spdlog::info("\t{}", layerName);
         }
 
         const auto layerProperties{ m_context.enumerateInstanceLayerProperties() };
-        spdlog::info("Number of available validation layers: {}", layerProperties.size());
+        spdlog::info("number of available validation layers: {}", layerProperties.size());
 
         for (const auto& layerProp : layerProperties)
         {
@@ -224,13 +226,14 @@ namespace flux
                 if (!std::strncmp(validationLayers[i], layerProp.layerName, m_stringMaxLen))
                 {
                     validationLayersBits |= (1U << i);
+                    break;
                 }
             }
         }
 
-        if (validationLayers.size() && !utils::isPowerOf2(validationLayersBits + 1))
+        if (utils::countBits(validationLayersBits) != validationLayers.size())
         {
-            throw std::runtime_error{"renderer::createInstance(): required validation layers not found!"};
+            throw std::runtime_error{"required validation layers not found!"};
         }
 
         const vk::InstanceCreateInfo createInfo
@@ -244,7 +247,7 @@ namespace flux
 
         m_instance = vk::raii::Instance(m_context, createInfo);
 
-        spdlog::info("Created vulkan instance");
+        spdlog::info("created vulkan instance");
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -276,6 +279,113 @@ namespace flux
         };
 
         m_debugMessenger = m_instance.createDebugUtilsMessengerEXT(createInfo);
+
+        spdlog::info("created debug messenger for validation layers");
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::pickPhysicalDevice()
+    {
+        const auto physicalDevices{ m_instance.enumeratePhysicalDevices() };
+
+        if (physicalDevices.empty())
+        {
+            throw std::runtime_error{"no physical vulkan device found!"};
+        }
+
+        for (auto physicalDevice : physicalDevices)
+        {
+            const auto deviceProperties{ physicalDevice.getProperties() };
+
+            if (deviceProperties.apiVersion < vk::ApiVersion14 ||
+                deviceProperties.deviceType != vk::PhysicalDeviceType::eDiscreteGpu)
+            {
+                continue;
+            }
+
+            const auto queueFamilies{ physicalDevice.getQueueFamilyProperties() };
+
+            bool foundGraphicsFamily{};
+
+            for (const auto family : queueFamilies)
+            {
+                if (family.queueFlags & vk::QueueFlagBits::eGraphics)
+                {
+                    foundGraphicsFamily = true;
+                    break;
+                }
+            }
+
+            if (!foundGraphicsFamily)
+            {
+                continue;
+            }
+
+            const std::vector<const char*> requiredExtensions
+            {
+                vk::KHRSwapchainExtensionName,
+            };
+
+            const auto availableExtensions{ physicalDevice.enumerateDeviceExtensionProperties() };
+            if (availableExtensions.empty())
+            {
+                continue;
+            }
+
+            uint32_t requiredExtensionsBits{};
+
+            for (size_t i{}; i < requiredExtensions.size(); ++i)
+            {
+                for (const auto& extension : availableExtensions)
+                {
+                    if (!std::strncmp(requiredExtensions[i], extension.extensionName, m_stringMaxLen))
+                    {
+                        requiredExtensionsBits |= (1U << i);
+                        break;
+                    }
+                }
+            }
+
+            if (utils::countBits(requiredExtensionsBits) != requiredExtensions.size())
+            {
+                continue;
+            }
+
+            const auto features
+            {
+                physicalDevice.template getFeatures2
+                <
+                    vk::PhysicalDeviceFeatures2,
+                    vk::PhysicalDeviceVulkan11Features,
+                    vk::PhysicalDeviceVulkan13Features,
+                    vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
+                >
+                ()
+            };
+
+            const bool supportsRequiredFeatures
+            {
+                features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters    &&
+                features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering        &&
+                features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState
+            };
+
+            if (!supportsRequiredFeatures)
+            {
+                continue;
+            }
+
+            m_physicalDevice = physicalDevice;
+        }
+
+        if (m_physicalDevice == nullptr)
+        {
+            throw std::runtime_error{"couldn't find suitable physical device!"};
+        }
+        else
+        {
+            spdlog::info("found suitable logical device");
+        }
     }
 
     ///////////////////////////////////////////////////////////////////////////
