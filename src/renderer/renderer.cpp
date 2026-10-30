@@ -339,9 +339,10 @@ namespace flux
 
             bool foundGraphicsFamily{};
 
-            for (const auto family : queueFamilies)
+            for (uint32_t i{}; i < queueFamilies.size(); ++i)
             {
-                if (family.queueFlags & vk::QueueFlagBits::eGraphics)
+                if ((queueFamilies[i].queueFlags & vk::QueueFlagBits::eGraphics)
+                    && physicalDevice.getSurfaceSupportKHR(i, *m_surface))
                 {
                     foundGraphicsFamily = true;
                     break;
@@ -507,6 +508,25 @@ namespace flux
 
         m_graphicsQueue = vk::raii::Queue(m_device, graphicsFamilyInd, 0);
         spdlog::info("graphics queue is created");
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    vk::SurfaceFormatKHR renderer::chooseSwapSurfaceFormat
+    (
+        const std::vector<vk::SurfaceFormatKHR>& formats
+    )
+    {
+        for (const auto& fmt : formats)
+        {
+            if (fmt.format == vk::Format::eB8G8R8A8Srgb &&
+                fmt.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
+            {
+                return fmt;
+            }
+        }
+
+        spdlog::warn("couldn't find SRGB surface");
+        return formats[0];
     }
 
     ///////////////////////////////////////////////////////////////////////////
