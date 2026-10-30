@@ -306,6 +306,13 @@ namespace flux
     }
 
     ///////////////////////////////////////////////////////////////////////////
+    static bool willRenderingBeSlow(const vk::PhysicalDeviceProperties& props)
+    {
+        return props.deviceType != vk::PhysicalDeviceType::eDiscreteGpu &&
+               props.deviceType != vk::PhysicalDeviceType::eIntegratedGpu;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
     void renderer::pickPhysicalDevice()
     {
         const auto physicalDevices{ m_instance.enumeratePhysicalDevices() };
@@ -315,12 +322,15 @@ namespace flux
             throw std::runtime_error{"no physical vulkan device found!"};
         }
 
+        vk::raii::PhysicalDevice selectedDevice   { nullptr };
+        vk::raii::PhysicalDevice preferredDevice  { nullptr };
+
         for (auto physicalDevice : physicalDevices)
         {
             const auto deviceProperties{ physicalDevice.getProperties() };
 
             if (deviceProperties.apiVersion < vk::ApiVersion14 ||
-                deviceProperties.deviceType != vk::PhysicalDeviceType::eDiscreteGpu)
+                willRenderingBeSlow(deviceProperties))
             {
                 continue;
             }
@@ -400,7 +410,23 @@ namespace flux
                 continue;
             }
 
-            m_physicalDevice = physicalDevice;
+            selectedDevice = physicalDevice;
+
+            if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
+            {
+                preferredDevice = physicalDevice;
+            }
+        }
+
+        if (preferredDevice != nullptr)
+        {
+            m_physicalDevice = preferredDevice;
+            spdlog::info("running on discrete gpu");
+        }
+        else
+        {
+            m_physicalDevice = selectedDevice;
+            spdlog::warn("running on integrated gpu");
         }
 
         if (m_physicalDevice == nullptr)
