@@ -407,10 +407,8 @@ namespace flux
         {
             throw std::runtime_error{"couldn't find suitable physical device!"};
         }
-        else
-        {
-            spdlog::info("found suitable logical device");
-        }
+
+        spdlog::info("found suitable logical device");
     }
 
     ///////////////////////////////////////////////////////////////////////////
