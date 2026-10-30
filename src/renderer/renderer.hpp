@@ -59,7 +59,16 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         int32_t m_windowWidth                               { 1280 };
         int32_t m_windowHeight                              { 720 };
-        const char* m_windowTitle                           { "FLUX" };
+
+        const char* m_windowTitle
+        {
+#ifndef NDEBUG
+            "FLUX (DEBUG)"
+#else
+            "FLUX (RELEASE)"
+#endif
+        };
+
         GLFWwindow* m_window                                {};
 
         ///////////////////////////////////////////////////////////////////////////

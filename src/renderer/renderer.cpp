@@ -42,6 +42,10 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
     void renderer::createWindow()
     {
+#ifndef NDEBUG
+        spdlog::warn("Running in DEBUG mode");
+#endif
+
         if (!glfwInit())
         {
             throw std::runtime_error{"glfwInit() failed!"};
