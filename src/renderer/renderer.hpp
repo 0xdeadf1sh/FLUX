@@ -1,6 +1,5 @@
 #pragma once
 
-#include "vulkan/vulkan.hpp"
 #include <vulkan/vulkan_raii.hpp>
 #include <GLFW/glfw3.h>
 
@@ -44,11 +43,15 @@ namespace flux
         void createSurface();
         void pickPhysicalDevice();
         void createLogicalDevice();
+        void createSwapchain();
 
         ///////////////////////////////////////////////////////////////////////////
         //////////////////////////////// AUXILIARY ////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>&);
+        vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>&);
+        vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR&);
+        uint32_t chooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR&);
 
         ///////////////////////////////////////////////////////////////////////////
         /////////////////////////////// RENDER LOOP ///////////////////////////////
@@ -87,5 +90,9 @@ namespace flux
         vk::raii::PhysicalDevice m_physicalDevice           { nullptr };
         vk::raii::Device m_device                           { nullptr };
         vk::raii::Queue m_graphicsQueue                     { nullptr };
+        vk::Extent2D m_swapchainExtent                      {};
+        vk::SurfaceFormatKHR m_swapchainSurfaceFormat       {};
+        vk::raii::SwapchainKHR m_swapchain                  { nullptr };
+        std::vector<vk::Image> m_swapchainImages            {};
     };
 }

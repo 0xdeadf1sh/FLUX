@@ -8,9 +8,10 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <cstring>
-#include <system_error>
 #include <vector>
-#include <optional>
+#include <cassert>
+#include <limits>
+#include <vulkan/vulkan_raii.hpp>
 
 namespace flux
 {
@@ -25,6 +26,7 @@ namespace flux
         createSurface();
         pickPhysicalDevice();
         createLogicalDevice();
+        createSwapchain();
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -516,10 +518,12 @@ namespace flux
         const std::vector<vk::SurfaceFormatKHR>& formats
     )
     {
+        assert(formats.size() > 0);
+
         for (const auto& fmt : formats)
         {
-            if (fmt.format == vk::Format::eB8G8R8A8Srgb &&
-                fmt.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
+            if (fmt.format      == vk::Format::eB8G8R8A8Srgb &&
+                fmt.colorSpace  == vk::ColorSpaceKHR::eSrgbNonlinear)
             {
                 return fmt;
             }
@@ -527,6 +531,101 @@ namespace flux
 
         spdlog::warn("couldn't find SRGB surface");
         return formats[0];
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    vk::PresentModeKHR renderer::chooseSwapPresentMode
+    (
+        const std::vector<vk::PresentModeKHR>& modes
+    )
+    {
+        assert(modes.size() > 0);
+
+        for (const auto& mode : modes)
+        {
+            if (mode == vk::PresentModeKHR::eMailbox)
+            {
+                return mode;
+            }
+        }
+
+        spdlog::warn("mailbox for present not found");
+        return vk::PresentModeKHR::eFifo;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    vk::Extent2D renderer::chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& caps)
+    {
+        if (caps.currentExtent.width != std::numeric_limits<uint32_t>::max())
+        {
+            return caps.currentExtent;
+        }
+
+        int32_t width{}, height{};
+        glfwGetFramebufferSize(m_window, &width, &height);
+
+        const uint32_t uwidth { static_cast<uint32_t>(width) };
+        const uint32_t uheight{ static_cast<uint32_t>(height) };
+
+        return
+        {
+            std::clamp(uwidth, caps.minImageExtent.width, caps.maxImageExtent.width),
+            std::clamp(uheight, caps.minImageExtent.height, caps.maxImageExtent.height),
+        };
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    uint32_t renderer::chooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& caps)
+    {
+        uint32_t minImageCount{ std::max(3U, caps.minImageCount) };
+
+        if (caps.maxImageCount > 0 && caps.maxImageCount < minImageCount)
+        {
+            minImageCount = caps.maxImageCount;
+        }
+
+        return minImageCount;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::createSwapchain()
+    {
+        const vk::SurfaceCapabilitiesKHR surfaceCaps
+        { m_physicalDevice.getSurfaceCapabilitiesKHR(*m_surface) };
+
+        const std::vector<vk::PresentModeKHR> presentModes
+        { m_physicalDevice.getSurfacePresentModesKHR(*m_surface) };
+
+        m_swapchainExtent = chooseSwapExtent(surfaceCaps);
+
+        const uint32_t minImageCount{ chooseSwapMinImageCount(surfaceCaps) };
+
+        std::vector<vk::SurfaceFormatKHR> availableFormats
+        { m_physicalDevice.getSurfaceFormatsKHR(*m_surface) };
+
+        m_swapchainSurfaceFormat = chooseSwapSurfaceFormat(availableFormats);
+
+        const vk::SwapchainCreateInfoKHR createInfo
+        {
+            .surface            = *m_surface,
+            .minImageCount      = minImageCount,
+            .imageFormat        = m_swapchainSurfaceFormat.format,
+            .imageColorSpace    = m_swapchainSurfaceFormat.colorSpace,
+            .imageExtent        = m_swapchainExtent,
+            .imageArrayLayers   = 1, // more than 1 for VR
+            .imageUsage         = vk::ImageUsageFlagBits::eColorAttachment,
+            .imageSharingMode   = vk::SharingMode::eExclusive,
+            .preTransform       = surfaceCaps.currentTransform,
+            .compositeAlpha     = vk::CompositeAlphaFlagBitsKHR::eOpaque,
+            .presentMode        = chooseSwapPresentMode(presentModes),
+            .clipped            = true,
+            .oldSwapchain       = nullptr,
+        };
+
+        m_swapchain             = vk::raii::SwapchainKHR(m_device, createInfo);
+        m_swapchainImages       = m_swapchain.getImages();
+
+        spdlog::info("created swapchain with {} images", m_swapchainImages.size());
     }
 
     ///////////////////////////////////////////////////////////////////////////
