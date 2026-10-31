@@ -3,7 +3,6 @@
 
 #include "vulkan/vulkan.hpp"
 #include "vulkan/vulkan_raii.hpp"
-#include <GLFW/glfw3.h>
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -61,9 +60,7 @@ namespace flux
     /////////////////////////////////// DTOR //////////////////////////////////
     ///////////////////////////////////////////////////////////////////////////
     renderer::~renderer()
-    {
-        destroyWindow();
-    }
+    { }
 
     ///////////////////////////////////////////////////////////////////////////
     //////////////////////////////// WINDOWING ////////////////////////////////
@@ -86,10 +83,10 @@ namespace flux
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-        if (!(m_window = glfwCreateWindow(m_windowWidth,
-                                          m_windowHeight,
-                                          m_windowTitle,
-                                          nullptr, nullptr)))
+        if (!(m_window.m_window = glfwCreateWindow(m_windowWidth,
+                                                   m_windowHeight,
+                                                   m_windowTitle,
+                                                   nullptr, nullptr)))
         {
             throw std::runtime_error{"glfwCreateWindow() failed!"};
         }
@@ -325,7 +322,10 @@ namespace flux
     {
         VkSurfaceKHR surface{};
 
-        if (glfwCreateWindowSurface(*m_instance, m_window, nullptr, &surface))
+        if (glfwCreateWindowSurface(*m_instance,
+                                    m_window.m_window,
+                                    nullptr,
+                                    &surface))
         {
             throw std::runtime_error{"failed to create window surface!"};
         }
@@ -593,7 +593,7 @@ namespace flux
         }
 
         int32_t width{}, height{};
-        glfwGetFramebufferSize(m_window, &width, &height);
+        glfwGetFramebufferSize(m_window.m_window, &width, &height);
 
         const uint32_t uwidth { static_cast<uint32_t>(width) };
         const uint32_t uheight{ static_cast<uint32_t>(height) };
@@ -1008,8 +1008,11 @@ namespace flux
     {
         m_presentCompleteSemaphore  = vk::raii::Semaphore(m_device,
                                                           vk::SemaphoreCreateInfo());
-        m_renderFinishedSemaphore   = vk::raii::Semaphore(m_device,
-                                                          vk::SemaphoreCreateInfo());
+
+        for (uint32_t i{}; i < m_swapchainImages.size(); ++i)
+        {
+            m_renderFinishedSemaphores.emplace_back(m_device, vk::SemaphoreCreateInfo());
+        }
 
         constexpr vk::FenceCreateInfo fenceCreateInfo
         {
@@ -1028,11 +1031,13 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
     void renderer::loop()
     {
-        while (!glfwWindowShouldClose(m_window))
+        while (!glfwWindowShouldClose(m_window.m_window))
         {
             glfwPollEvents();
             render();
         }
+
+        m_device.waitIdle();
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -1066,7 +1071,7 @@ namespace flux
             .commandBufferCount         = static_cast<uint32_t>(m_cmdBuffers.size()),
             .pCommandBuffers            = &*m_cmdBuffers[0],
             .signalSemaphoreCount       = 1,
-            .pSignalSemaphores          = &*m_renderFinishedSemaphore,
+            .pSignalSemaphores          = &*m_renderFinishedSemaphores[imageIndex],
         };
 
         m_graphicsQueue.submit(submitInfo, *m_drawFence);
@@ -1074,23 +1079,12 @@ namespace flux
         const vk::PresentInfoKHR presentInfoKHR
         {
             .waitSemaphoreCount         = 1,
-            .pWaitSemaphores            = &*m_renderFinishedSemaphore,
+            .pWaitSemaphores            = &*m_renderFinishedSemaphores[imageIndex],
             .swapchainCount             = 1,
             .pSwapchains                = &*m_swapchain,
             .pImageIndices              = &imageIndex,
         };
 
         result = m_graphicsQueue.presentKHR(presentInfoKHR);
-    }
-
-    ///////////////////////////////////////////////////////////////////////////
-    ///////////////////////////////// CLEANUP /////////////////////////////////
-    ///////////////////////////////////////////////////////////////////////////
-
-    ///////////////////////////////////////////////////////////////////////////
-    void renderer::destroyWindow()
-    {
-        glfwDestroyWindow(m_window);
-        glfwTerminate();
     }
 }
