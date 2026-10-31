@@ -27,6 +27,7 @@ namespace flux
         pickPhysicalDevice();
         createLogicalDevice();
         createSwapchain();
+        createSwapchainImageViews();
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -577,7 +578,8 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
     uint32_t renderer::chooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& caps)
     {
-        uint32_t minImageCount{ std::max(3U, caps.minImageCount) };
+        uint32_t minImageCount{ std::max(m_swapchainMinImages,
+                                         caps.minImageCount) };
 
         if (caps.maxImageCount > 0 && caps.maxImageCount < minImageCount)
         {
@@ -626,6 +628,34 @@ namespace flux
         m_swapchainImages       = m_swapchain.getImages();
 
         spdlog::info("created swapchain with {} images", m_swapchainImages.size());
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::createSwapchainImageViews()
+    {
+        assert(m_swapchainImageViews.empty());
+
+        vk::ImageViewCreateInfo createInfo
+        {
+            .viewType           = vk::ImageViewType::e2D,
+            .format             = m_swapchainSurfaceFormat.format,
+            .subresourceRange   =
+            {
+                .aspectMask     = vk::ImageAspectFlagBits::eColor,
+                .levelCount     = 1,
+                .layerCount     = 1, // needs to be more than 1 for VR
+            }
+        };
+
+        m_swapchainImageViews.reserve(m_swapchainImages.size());
+
+        for (const auto& image : m_swapchainImages)
+        {
+            createInfo.image = image;
+            m_swapchainImageViews.emplace_back(m_device, createInfo);
+        }
+
+        spdlog::info("created {} image views for the swapchain", m_swapchainImageViews.size());
     }
 
     ///////////////////////////////////////////////////////////////////////////

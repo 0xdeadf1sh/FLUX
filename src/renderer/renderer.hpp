@@ -28,6 +28,7 @@ namespace flux
         static constexpr const char* m_rendererName         { "FLUX Engine" };
         static constexpr int32_t m_rendererVersion          { VK_MAKE_VERSION(0, 1, 0) };
         static constexpr uint32_t m_stringMaxLen            { 128 };
+        static constexpr uint32_t m_swapchainMinImages      { 5 };
 
     private:
         ///////////////////////////////////////////////////////////////////////////
@@ -44,6 +45,7 @@ namespace flux
         void pickPhysicalDevice();
         void createLogicalDevice();
         void createSwapchain();
+        void createSwapchainImageViews();
 
         ///////////////////////////////////////////////////////////////////////////
         //////////////////////////////// AUXILIARY ////////////////////////////////
@@ -94,5 +96,6 @@ namespace flux
         vk::SurfaceFormatKHR m_swapchainSurfaceFormat       {};
         vk::raii::SwapchainKHR m_swapchain                  { nullptr };
         std::vector<vk::Image> m_swapchainImages            {};
+        std::vector<vk::raii::ImageView> m_swapchainImageViews {};
     };
 }
