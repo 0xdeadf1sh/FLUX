@@ -4,6 +4,7 @@
 #include "vulkan/vulkan.hpp"
 #include "vulkan/vulkan_raii.hpp"
 
+#include <GLFW/glfw3.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
@@ -57,14 +58,18 @@ namespace flux
     }
 
     ///////////////////////////////////////////////////////////////////////////
-    /////////////////////////////////// DTOR //////////////////////////////////
-    ///////////////////////////////////////////////////////////////////////////
-    renderer::~renderer()
-    { }
-
-    ///////////////////////////////////////////////////////////////////////////
     //////////////////////////////// WINDOWING ////////////////////////////////
     ///////////////////////////////////////////////////////////////////////////
+
+    ///////////////////////////////////////////////////////////////////////////
+    static void framebufferResizeCallback(GLFWwindow*   window,
+                                          [[maybe_unused]] int32_t width,
+                                          [[maybe_unused]] int32_t height)
+    {
+        bool* resizeFlag{ reinterpret_cast<bool*>(glfwGetWindowUserPointer(window)) };
+        assert(resizeFlag != nullptr);
+        *resizeFlag = true;
+    }
 
     ///////////////////////////////////////////////////////////////////////////
     void renderer::createWindow()
@@ -81,7 +86,7 @@ namespace flux
         spdlog::info("initialized GLFW: {}", glfwGetVersionString());
 
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+        glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
         if (!(m_window.m_window = glfwCreateWindow(m_windowWidth,
                                                    m_windowHeight,
@@ -90,6 +95,9 @@ namespace flux
         {
             throw std::runtime_error{"glfwCreateWindow() failed!"};
         }
+
+        glfwSetWindowUserPointer(m_window.m_window, &m_framebufferResized);
+        glfwSetFramebufferSizeCallback(m_window.m_window, framebufferResizeCallback);
 
         spdlog::info("opened a GLFW window: w = {}, h = {}", m_windowWidth,
                                                              m_windowHeight);
@@ -620,6 +628,10 @@ namespace flux
     }
 
     ///////////////////////////////////////////////////////////////////////////
+    //////////////////////////////// SWAPCHAIN ////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////
+
+    ///////////////////////////////////////////////////////////////////////////
     void renderer::createSwapchain()
     {
         const vk::SurfaceCapabilitiesKHR surfaceCaps
@@ -686,6 +698,39 @@ namespace flux
         }
 
         spdlog::info("created {} image views for the swapchain", m_swapchainImageViews.size());
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::recreateSwapchain()
+    {
+        int32_t width{}, height{};
+        glfwGetFramebufferSize(m_window.m_window, &width, &height);
+
+        while ((!width || !height) && !glfwWindowShouldClose(m_window.m_window))
+        {
+            glfwGetFramebufferSize(m_window.m_window, &width, &height);
+            glfwWaitEvents();
+        }
+
+        if (glfwWindowShouldClose(m_window.m_window))
+        {
+            return;
+        }
+
+        m_device.waitIdle();
+
+        cleanupSwapchain();
+
+        spdlog::info("re-creating a new swapchain with dims {} x {}", width, height);
+        createSwapchain();
+        createSwapchainImageViews();
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::cleanupSwapchain()
+    {
+        m_swapchainImageViews.clear();
+        m_swapchain = nullptr;
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -1063,11 +1108,22 @@ namespace flux
             throw std::runtime_error{"failed to wait for fence!"};
         }
 
-        m_device.resetFences(*m_inFlightFences[m_frameIndex]);
-
         auto [result, imageIndex] = m_swapchain.acquireNextImage(UINT64_MAX,
                                                                  *m_presentCompleteSemaphores[m_frameIndex],
                                                                  nullptr);
+
+        if (result == vk::Result::eErrorOutOfDateKHR)
+        {
+            recreateSwapchain();
+            return;
+        }
+        else if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR)
+        {
+            assert(result == vk::Result::eTimeout || result == vk::Result::eNotReady);
+            throw std::runtime_error{"failed to acquire swapchain image!"};
+        }
+
+        m_device.resetFences(*m_inFlightFences[m_frameIndex]);
 
         m_cmdBuffers[m_frameIndex].reset();
         recordCommandBuffers(imageIndex);
@@ -1098,5 +1154,17 @@ namespace flux
         };
 
         result = m_graphicsQueue.presentKHR(presentInfoKHR);
+
+        if (result == vk::Result::eSuboptimalKHR ||
+            result == vk::Result::eErrorOutOfDateKHR ||
+            m_framebufferResized)
+        {
+            m_framebufferResized = false;
+            recreateSwapchain();
+        }
+        else
+        {
+            assert(result == vk::Result::eSuccess);
+        }
     }
 }
