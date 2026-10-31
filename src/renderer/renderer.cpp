@@ -1,6 +1,7 @@
 #include "renderer.hpp"
 #include "../common/utils.hpp"
 
+#include "vulkan/vulkan.hpp"
 #include "vulkan/vulkan_raii.hpp"
 #include <GLFW/glfw3.h>
 
@@ -25,6 +26,9 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
     renderer::renderer([[maybe_unused]] int argc, [[maybe_unused]] char** argv)
     {
+        ///////////////////////////////////////////////////////////////////////////
+        ////////////////////////////// INITIALIZATION /////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
         createWindow();
         createInstance();
         createDebugMessenger();
@@ -34,7 +38,23 @@ namespace flux
         createSwapchain();
         createSwapchainImageViews();
 
-        createGraphicsPipeline(FLUX_SHADERS_PATH "basic.slang.spv");
+        ///////////////////////////////////////////////////////////////////////////
+        //////////////////////////// GRAPHICS PIPELINES ///////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+        m_basicPipelineLayout   = createPipelineLayout();
+        m_basicPipeline         = createPipeline(FLUX_SHADERS_PATH "basic.slang.spv",
+                                                 m_basicPipelineLayout);
+
+        ///////////////////////////////////////////////////////////////////////////
+        /////////////////////////// VULKAN COMMAND OBJECTS ////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+        createCommandPool();
+        createCommandBuffers();
+
+        ///////////////////////////////////////////////////////////////////////////
+        ///////////////////////// SYNCHRONIZATION OBJECTS /////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+        createSyncObjects();
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -53,7 +73,7 @@ namespace flux
     void renderer::createWindow()
     {
 #ifndef NDEBUG
-        spdlog::warn("Running in DEBUG mode");
+        spdlog::warn("running in DEBUG mode");
 #endif
 
         if (!glfwInit())
@@ -409,6 +429,7 @@ namespace flux
             const bool supportsRequiredFeatures
             {
                 features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters    &&
+                features.template get<vk::PhysicalDeviceVulkan13Features>().synchronization2 &&
                 features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering        &&
                 features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState
             };
@@ -495,7 +516,7 @@ namespace flux
         {
             {},                         // vk::PhysicalDeviceFeatures2
             { .shaderDrawParameters     = true },
-            { .dynamicRendering         = true },
+            { .synchronization2         = true, .dynamicRendering = true },
             { .extendedDynamicState     = true },
         };
 
@@ -518,6 +539,8 @@ namespace flux
 
         m_graphicsQueue = vk::raii::Queue(m_device, graphicsFamilyInd, 0);
         spdlog::info("graphics queue is created");
+
+        m_graphicsQueueFamilyIndex = graphicsFamilyInd;
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -670,11 +693,332 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
 
     ///////////////////////////////////////////////////////////////////////////
-    void renderer::createGraphicsPipeline(std::string_view shaderURL)
+    vk::raii::ShaderModule renderer::createShaderModule(const std::vector<char>& bytecode)
     {
-        std::vector<char> shaderCode{ utils::readBinaryFile(shaderURL) };
+        const vk::ShaderModuleCreateInfo createInfo
+        {
+            .codeSize   = bytecode.size(),
+            .pCode      = reinterpret_cast<const uint32_t*>(&bytecode[0])
+        };
 
-        spdlog::info("Loaded shader {} with {} bytes", shaderURL, shaderCode.size());
+        return vk::raii::ShaderModule(m_device, createInfo);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    vk::raii::PipelineLayout renderer::createPipelineLayout()
+    {
+        constexpr vk::PipelineLayoutCreateInfo pipelineLayoutInfo
+        {
+            .setLayoutCount             = 0,
+            .pushConstantRangeCount     = 0,
+        };
+
+        vk::raii::PipelineLayout pipelineLayout
+        { vk::raii::PipelineLayout(m_device, pipelineLayoutInfo) };
+
+        return pipelineLayout;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    vk::raii::Pipeline renderer::createPipeline(std::string_view shaderURL,
+                                                const vk::raii::PipelineLayout& layout)
+    {
+        const std::vector<char> shaderCode{ utils::readBinaryFile(shaderURL) };
+        spdlog::info("loaded shader {} with {} bytes", shaderURL, shaderCode.size());
+
+        const vk::raii::ShaderModule shaderModule{ createShaderModule(shaderCode) };
+
+        const vk::PipelineShaderStageCreateInfo vertexShaderStageInfo
+        {
+            .stage                  = vk::ShaderStageFlagBits::eVertex,
+            .module                 = shaderModule,
+            .pName                  = "vmain",
+            .pSpecializationInfo    = nullptr,
+        };
+
+        const vk::PipelineShaderStageCreateInfo fragmentShaderStageInfo
+        {
+            .stage                  = vk::ShaderStageFlagBits::eFragment,
+            .module                 = shaderModule,
+            .pName                  = "fmain",
+            .pSpecializationInfo    = nullptr,
+        };
+
+        const vk::PipelineShaderStageCreateInfo shaderStages[]
+        {
+            vertexShaderStageInfo,
+            fragmentShaderStageInfo,
+        };
+
+        const std::vector<vk::DynamicState> dynamicStates
+        {
+            vk::DynamicState::eViewport,
+            vk::DynamicState::eScissor,
+        };
+
+        const vk::PipelineDynamicStateCreateInfo dynamicStateInfo
+        {
+            .dynamicStateCount  = static_cast<uint32_t>(dynamicStates.size()),
+            .pDynamicStates     = &dynamicStates[0],
+        };
+
+        constexpr vk::PipelineViewportStateCreateInfo viewportState
+        {
+            .viewportCount  = 1,
+            .scissorCount   = 1,
+        };
+
+        constexpr vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+
+        constexpr vk::PipelineInputAssemblyStateCreateInfo inputAssembly
+        {
+            .topology = vk::PrimitiveTopology::eTriangleList,
+        };
+
+        constexpr vk::PipelineRasterizationStateCreateInfo rasterizer
+        {
+            .depthClampEnable           = vk::False,
+            .rasterizerDiscardEnable    = vk::False,
+            .polygonMode                = vk::PolygonMode::eFill,
+            .cullMode                   = vk::CullModeFlagBits::eBack,
+            .frontFace                  = vk::FrontFace::eCounterClockwise,
+            .depthBiasEnable            = vk::False,
+            .lineWidth                  = 1.0f,
+        };
+
+        constexpr vk::PipelineMultisampleStateCreateInfo multisampling
+        {
+            .rasterizationSamples       = vk::SampleCountFlagBits::e1,
+            .sampleShadingEnable        = vk::False,
+        };
+
+        constexpr vk::PipelineColorBlendAttachmentState colorBlendAttachment
+        {
+            .blendEnable                = vk::False,
+            .colorWriteMask             = vk::ColorComponentFlagBits::eR |
+                                          vk::ColorComponentFlagBits::eG |
+                                          vk::ColorComponentFlagBits::eB |
+                                          vk::ColorComponentFlagBits::eA,
+        };
+
+        const vk::PipelineColorBlendStateCreateInfo colorBlending
+        {
+            .logicOpEnable              = vk::False, // when True, blendEnable becomes False
+            .logicOp                    = vk::LogicOp::eCopy,
+            .attachmentCount            = 1,
+            .pAttachments               = &colorBlendAttachment,
+        };
+
+        const vk::StructureChain
+        <
+            vk::GraphicsPipelineCreateInfo,
+            vk::PipelineRenderingCreateInfo
+        >
+        createInfo
+        {
+            // graphics pipeline
+            {
+                // programmable stages
+                .stageCount             = 2,
+                .pStages                = shaderStages,
+
+                // fixed-function stages
+                .pVertexInputState      = &vertexInputInfo,
+                .pInputAssemblyState    = &inputAssembly,
+                .pViewportState         = &viewportState,
+                .pRasterizationState    = &rasterizer,
+                .pMultisampleState      = &multisampling,
+                .pColorBlendState       = &colorBlending,
+                .pDynamicState          = &dynamicStateInfo,
+
+                // pipeline layout
+                .layout                 = layout,
+
+                // no renderpass needed
+                .renderPass             = nullptr,
+
+                // parent pipeline
+                .basePipelineHandle     = nullptr,
+                .basePipelineIndex      = 0,
+                // .flags               = vk::PipelineCreateFlagBits::eDerivative,
+            },
+
+            // dynamic rendering
+            {
+                .colorAttachmentCount   = 1,
+                .pColorAttachmentFormats = &m_swapchainSurfaceFormat.format,
+            }
+        };
+
+        const vk::raii::PipelineCache cache{ nullptr };
+
+        vk::raii::Pipeline pipeline(m_device,
+                                    cache,
+                                    createInfo.get<vk::GraphicsPipelineCreateInfo>());
+
+        spdlog::info("created a pipeline for '{}'", shaderURL);
+
+        return pipeline;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    ///////////////////////////// VULKAN COMMANDS /////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::createCommandPool()
+    {
+        const vk::CommandPoolCreateInfo poolInfo
+        {
+            .flags              = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+            .queueFamilyIndex   = m_graphicsQueueFamilyIndex,
+        };
+
+        m_cmdPool = vk::raii::CommandPool(m_device, poolInfo);
+
+        spdlog::info("created a command pool");
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::createCommandBuffers()
+    {
+        const vk::CommandBufferAllocateInfo allocInfo
+        {
+            .commandPool            = m_cmdPool,
+            .level                  = vk::CommandBufferLevel::ePrimary,
+            .commandBufferCount     = 1,
+        };
+
+        m_cmdBuffers = vk::raii::CommandBuffers(m_device, allocInfo);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    static void transitionImageLayout
+    (
+        vk::ImageLayout             oldLayout,
+        vk::ImageLayout             newLayout,
+        vk::AccessFlags2            srcAccessMask,
+        vk::AccessFlags2            dstAccessMask,
+        vk::PipelineStageFlags2     srcStageMask,
+        vk::PipelineStageFlags2     dstStageMask,
+        const vk::Image&            image,
+        const vk::CommandBuffer     cmdBuffer
+    )
+    {
+        const vk::ImageMemoryBarrier2 barrier
+        {
+            .srcStageMask           = srcStageMask,
+            .srcAccessMask          = srcAccessMask,
+            .dstStageMask           = dstStageMask,
+            .dstAccessMask          = dstAccessMask,
+            .oldLayout              = oldLayout,
+            .newLayout              = newLayout,
+            .srcQueueFamilyIndex    = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex    = VK_QUEUE_FAMILY_IGNORED,
+            .image                  = image,
+            .subresourceRange       =
+            {
+                .aspectMask         = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel       = 0,
+                .levelCount         = 1,
+                .baseArrayLayer     = 0,
+                .layerCount         = 1,
+            },
+        };
+
+        const vk::DependencyInfo dependency
+        {
+            .dependencyFlags            = {},
+            .imageMemoryBarrierCount    = 1,
+            .pImageMemoryBarriers       = &barrier,
+        };
+
+        cmdBuffer.pipelineBarrier2(dependency);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::recordCommandBuffers(uint32_t imageIndex)
+    {
+        assert(m_cmdBuffers.size() > 0);
+
+        const vk::raii::CommandBuffer& cmdBuffer{ m_cmdBuffers[0] };
+
+        cmdBuffer.begin({});
+
+        transitionImageLayout(vk::ImageLayout::eUndefined,
+                              vk::ImageLayout::eColorAttachmentOptimal,
+                              {},
+                              vk::AccessFlagBits2::eColorAttachmentWrite,
+                              vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                              vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                              m_swapchainImages[imageIndex],
+                              cmdBuffer);
+
+        const vk::ClearValue clearColor{ vk::ClearColorValue({{0.1f, 0.2f, 0.2f, 1.0f}}) };
+
+        const vk::RenderingAttachmentInfo attachmentInfo
+        {
+            .imageView      = m_swapchainImageViews[imageIndex],
+            .imageLayout    = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp         = vk::AttachmentLoadOp::eClear,
+            .storeOp        = vk::AttachmentStoreOp::eStore,
+            .clearValue     = clearColor,
+        };
+
+        const vk::RenderingInfo renderInfo
+        {
+            .renderArea             =
+            {
+                .offset             = {},
+                .extent             = m_swapchainExtent,
+            },
+            .layerCount             = 1,
+            .colorAttachmentCount   = 1,
+            .pColorAttachments      = &attachmentInfo,
+        };
+
+        cmdBuffer.beginRendering(renderInfo);
+        cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_basicPipeline);
+        cmdBuffer.setViewport(0, vk::Viewport(0.0f,
+                                              0.0f,
+                                              static_cast<float>(m_swapchainExtent.width),
+                                              static_cast<float>(m_swapchainExtent.height)));
+        cmdBuffer.setScissor(0, vk::Rect2D{ {0, 0}, m_swapchainExtent });
+        cmdBuffer.draw(3, 1, 0, 0);
+        cmdBuffer.endRendering();
+
+        transitionImageLayout(vk::ImageLayout::eColorAttachmentOptimal,
+                              vk::ImageLayout::ePresentSrcKHR,
+                              vk::AccessFlagBits2::eColorAttachmentWrite,
+                              {},
+                              vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                              vk::PipelineStageFlagBits2::eBottomOfPipe,
+                              m_swapchainImages[imageIndex],
+                              cmdBuffer);
+
+        cmdBuffer.end();
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    ///////////////////////////// SYNCHRONIZATION /////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::createSyncObjects()
+    {
+        m_presentCompleteSemaphore  = vk::raii::Semaphore(m_device,
+                                                          vk::SemaphoreCreateInfo());
+        m_renderFinishedSemaphore   = vk::raii::Semaphore(m_device,
+                                                          vk::SemaphoreCreateInfo());
+
+        constexpr vk::FenceCreateInfo fenceCreateInfo
+        {
+            .flags = vk::FenceCreateFlagBits::eSignaled,
+        };
+
+        m_drawFence = vk::raii::Fence(m_device, fenceCreateInfo);
+
+        spdlog::info("created vulkan synchronization objects");
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -687,7 +1031,56 @@ namespace flux
         while (!glfwWindowShouldClose(m_window))
         {
             glfwPollEvents();
+            render();
         }
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::render()
+    {
+        const vk::Result fenceResult{ m_device.waitForFences(*m_drawFence,
+                                                             vk::True,
+                                                             UINT64_MAX) };
+
+        if (fenceResult != vk::Result::eSuccess)
+        {
+            throw std::runtime_error{"failed to wait for fence!"};
+        }
+
+        m_device.resetFences(*m_drawFence);
+
+        auto [result, imageIndex] = m_swapchain.acquireNextImage(UINT64_MAX,
+                                                                 *m_presentCompleteSemaphore,
+                                                                 nullptr);
+
+        recordCommandBuffers(imageIndex);
+
+        constexpr vk::PipelineStageFlags waitDestinationStageFlag
+        { vk::PipelineStageFlagBits::eColorAttachmentOutput };
+
+        const vk::SubmitInfo submitInfo
+        {
+            .waitSemaphoreCount         = 1,
+            .pWaitSemaphores            = &*m_presentCompleteSemaphore,
+            .pWaitDstStageMask          = &waitDestinationStageFlag,
+            .commandBufferCount         = static_cast<uint32_t>(m_cmdBuffers.size()),
+            .pCommandBuffers            = &*m_cmdBuffers[0],
+            .signalSemaphoreCount       = 1,
+            .pSignalSemaphores          = &*m_renderFinishedSemaphore,
+        };
+
+        m_graphicsQueue.submit(submitInfo, *m_drawFence);
+
+        const vk::PresentInfoKHR presentInfoKHR
+        {
+            .waitSemaphoreCount         = 1,
+            .pWaitSemaphores            = &*m_renderFinishedSemaphore,
+            .swapchainCount             = 1,
+            .pSwapchains                = &*m_swapchain,
+            .pImageIndices              = &imageIndex,
+        };
+
+        result = m_graphicsQueue.presentKHR(presentInfoKHR);
     }
 
     ///////////////////////////////////////////////////////////////////////////

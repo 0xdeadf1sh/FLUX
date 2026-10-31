@@ -59,12 +59,13 @@ function(add_slang_shader_target TARGET)
                 -target spirv
                 -profile spirv_1_4
                 -emit-spirv-directly
+                -fvk-invert-y
                 -fvk-use-entrypoint-name ${entry_flags} ${include_flags}
                 -depfile ${dep}
                 -o ${spv}
             DEPENDS ${src_abs}
             DEPFILE ${dep}
-            COMMENT "compiling shader ${name}"
+            COMMENT "Compiling shader ${name}"
             VERBATIM
         )
 
