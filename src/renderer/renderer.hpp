@@ -84,12 +84,13 @@ namespace flux
         /////////////////////////////// RENDER LOOP ///////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         void render();
+        void stepToNextFrame();
 
         ///////////////////////////////////////////////////////////////////////////
         //////////////////////////////// WINDOWING ////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        int32_t m_windowWidth                               { 1280 };
-        int32_t m_windowHeight                              { 720 };
+        int32_t m_windowWidth                               { 1920 };
+        int32_t m_windowHeight                              { 1080 };
 
         const char* m_windowTitle
         {
@@ -126,6 +127,12 @@ namespace flux
         vk::raii::Pipeline m_basicPipeline                  { nullptr };
 
         ///////////////////////////////////////////////////////////////////////////
+        /////////////////////////// FRAMES IN FLIGHT //////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+        uint32_t m_frameIndex                               { 0 };
+        uint32_t m_framesInFlight                           { 2 };
+
+        ///////////////////////////////////////////////////////////////////////////
         //////////////////////// VULKAN COMMAND OBJECTS ///////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         vk::raii::CommandPool m_cmdPool                     { nullptr };
@@ -134,8 +141,8 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         //////////////////////// SYNCHRONIZATION OBJECTS //////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        vk::raii::Semaphore m_presentCompleteSemaphore      { nullptr };
-        std::vector<vk::raii::Semaphore> m_renderFinishedSemaphores{};
-        vk::raii::Fence m_drawFence                         { nullptr };
+        std::vector<vk::raii::Semaphore> m_presentCompleteSemaphores    {};
+        std::vector<vk::raii::Semaphore> m_renderFinishedSemaphores     {};
+        std::vector<vk::raii::Fence> m_inFlightFences                   {};
     };
 }

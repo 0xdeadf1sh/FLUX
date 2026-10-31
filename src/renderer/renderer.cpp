@@ -886,7 +886,7 @@ namespace flux
         {
             .commandPool            = m_cmdPool,
             .level                  = vk::CommandBufferLevel::ePrimary,
-            .commandBufferCount     = 1,
+            .commandBufferCount     = m_framesInFlight,
         };
 
         m_cmdBuffers = vk::raii::CommandBuffers(m_device, allocInfo);
@@ -941,7 +941,7 @@ namespace flux
     {
         assert(m_cmdBuffers.size() > 0);
 
-        const vk::raii::CommandBuffer& cmdBuffer{ m_cmdBuffers[0] };
+        const vk::raii::CommandBuffer& cmdBuffer{ m_cmdBuffers[m_frameIndex] };
 
         cmdBuffer.begin({});
 
@@ -954,7 +954,8 @@ namespace flux
                               m_swapchainImages[imageIndex],
                               cmdBuffer);
 
-        const vk::ClearValue clearColor{ vk::ClearColorValue({{0.1f, 0.2f, 0.2f, 1.0f}}) };
+        constexpr vk::ClearValue clearColor
+        { vk::ClearColorValue({{0.01f, 0.02f, 0.02f, 1.0f}}) };
 
         const vk::RenderingAttachmentInfo attachmentInfo
         {
@@ -1006,9 +1007,6 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
     void renderer::createSyncObjects()
     {
-        m_presentCompleteSemaphore  = vk::raii::Semaphore(m_device,
-                                                          vk::SemaphoreCreateInfo());
-
         for (uint32_t i{}; i < m_swapchainImages.size(); ++i)
         {
             m_renderFinishedSemaphores.emplace_back(m_device, vk::SemaphoreCreateInfo());
@@ -1019,7 +1017,13 @@ namespace flux
             .flags = vk::FenceCreateFlagBits::eSignaled,
         };
 
-        m_drawFence = vk::raii::Fence(m_device, fenceCreateInfo);
+        for (uint32_t i{}; i < m_framesInFlight; ++i)
+        {
+            m_presentCompleteSemaphores.emplace_back(m_device,
+                                                     vk::SemaphoreCreateInfo());
+
+            m_inFlightFences.emplace_back(m_device, fenceCreateInfo);
+        }
 
         spdlog::info("created vulkan synchronization objects");
     }
@@ -1035,15 +1039,22 @@ namespace flux
         {
             glfwPollEvents();
             render();
+            stepToNextFrame();
         }
 
         m_device.waitIdle();
     }
 
     ///////////////////////////////////////////////////////////////////////////
+    void renderer::stepToNextFrame()
+    {
+        m_frameIndex = (m_frameIndex + 1) % m_framesInFlight;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
     void renderer::render()
     {
-        const vk::Result fenceResult{ m_device.waitForFences(*m_drawFence,
+        const vk::Result fenceResult{ m_device.waitForFences(*m_inFlightFences[m_frameIndex],
                                                              vk::True,
                                                              UINT64_MAX) };
 
@@ -1052,12 +1063,13 @@ namespace flux
             throw std::runtime_error{"failed to wait for fence!"};
         }
 
-        m_device.resetFences(*m_drawFence);
+        m_device.resetFences(*m_inFlightFences[m_frameIndex]);
 
         auto [result, imageIndex] = m_swapchain.acquireNextImage(UINT64_MAX,
-                                                                 *m_presentCompleteSemaphore,
+                                                                 *m_presentCompleteSemaphores[m_frameIndex],
                                                                  nullptr);
 
+        m_cmdBuffers[m_frameIndex].reset();
         recordCommandBuffers(imageIndex);
 
         constexpr vk::PipelineStageFlags waitDestinationStageFlag
@@ -1066,15 +1078,15 @@ namespace flux
         const vk::SubmitInfo submitInfo
         {
             .waitSemaphoreCount         = 1,
-            .pWaitSemaphores            = &*m_presentCompleteSemaphore,
+            .pWaitSemaphores            = &*m_presentCompleteSemaphores[m_frameIndex],
             .pWaitDstStageMask          = &waitDestinationStageFlag,
-            .commandBufferCount         = static_cast<uint32_t>(m_cmdBuffers.size()),
-            .pCommandBuffers            = &*m_cmdBuffers[0],
+            .commandBufferCount         = 1,
+            .pCommandBuffers            = &*m_cmdBuffers[m_frameIndex],
             .signalSemaphoreCount       = 1,
             .pSignalSemaphores          = &*m_renderFinishedSemaphores[imageIndex],
         };
 
-        m_graphicsQueue.submit(submitInfo, *m_drawFence);
+        m_graphicsQueue.submit(submitInfo, *m_inFlightFences[m_frameIndex]);
 
         const vk::PresentInfoKHR presentInfoKHR
         {
