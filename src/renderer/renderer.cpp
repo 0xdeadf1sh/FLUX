@@ -1,7 +1,7 @@
 #include "renderer.hpp"
 #include "../common/utils.hpp"
 
-#include "vulkan/vulkan.hpp"
+#include "vulkan/vulkan_raii.hpp"
 #include <GLFW/glfw3.h>
 
 #include <spdlog/spdlog.h>
@@ -11,7 +11,12 @@
 #include <vector>
 #include <cassert>
 #include <limits>
-#include <vulkan/vulkan_raii.hpp>
+
+#ifndef NDEBUG
+#define FLUX_SHADERS_PATH "build/bin/shaders/"
+#else
+#define FLUX_SHADERS_PATH "shaders/"
+#endif
 
 namespace flux
 {
@@ -28,7 +33,8 @@ namespace flux
         createLogicalDevice();
         createSwapchain();
         createSwapchainImageViews();
-        createBasicGraphicsPipeline();
+
+        createGraphicsPipeline(FLUX_SHADERS_PATH "basic.slang.spv");
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -664,9 +670,11 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
 
     ///////////////////////////////////////////////////////////////////////////
-    void renderer::createBasicGraphicsPipeline()
+    void renderer::createGraphicsPipeline(std::string_view shaderURL)
     {
+        std::vector<char> shaderCode{ utils::readBinaryFile(shaderURL) };
 
+        spdlog::info("Loaded shader {} with {} bytes", shaderURL, shaderCode.size());
     }
 
     ///////////////////////////////////////////////////////////////////////////
