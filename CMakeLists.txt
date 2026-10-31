@@ -82,3 +82,13 @@ if(ipo_ok)
 else()
     message(WARNING "IPO/LTO not supported: ${ipo_msg}")
 endif()
+
+#################### SHADERS ####################
+include(FluxCompileShaders)
+
+add_slang_shader_target(shaders
+    OUTPUT_DIR  ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders
+    INCLUDE_DIR shaders/common
+    SOURCES     shaders/renderer/basic.slang)
+
+add_dependencies(${PROJECT_NAME} shaders)
