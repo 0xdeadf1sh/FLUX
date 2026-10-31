@@ -1,1 +1,3 @@
 leak:libdbus-1.so
+leak:gtk_module_init
+leak:libdecor-gtk.so
