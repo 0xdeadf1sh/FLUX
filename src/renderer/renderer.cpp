@@ -1155,8 +1155,8 @@ namespace flux
 
         result = m_graphicsQueue.presentKHR(presentInfoKHR);
 
-        if (result == vk::Result::eSuboptimalKHR ||
-            result == vk::Result::eErrorOutOfDateKHR ||
+        if (result == vk::Result::eSuboptimalKHR        ||
+            result == vk::Result::eErrorOutOfDateKHR    ||
             m_framebufferResized)
         {
             m_framebufferResized = false;
