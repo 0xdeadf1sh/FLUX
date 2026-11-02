@@ -46,6 +46,11 @@ namespace flux
                                                  m_basicPipelineLayout);
 
         ///////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////// BUFFERS ////////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+        createVertexBuffer();
+
+        ///////////////////////////////////////////////////////////////////////////
         /////////////////////////// VULKAN COMMAND OBJECTS ////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         createCommandPool();
@@ -813,7 +818,34 @@ namespace flux
             .scissorCount   = 1,
         };
 
-        constexpr vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+        constexpr vk::VertexInputBindingDescription vertexInputBinding
+        {
+            .binding        = 0,
+            .stride         = 6 * sizeof(float),
+            .inputRate      = vk::VertexInputRate::eVertex,
+        };
+
+        constexpr vk::VertexInputAttributeDescription vertexAttributeDescriptions[]
+        {{
+            .location       = 0,
+            .binding        = 0,
+            .format         = vk::Format::eR32G32B32Sfloat,
+            .offset         = 0,
+        },
+        {
+            .location       = 1,
+            .binding        = 0,
+            .format         = vk::Format::eR32G32B32Sfloat,
+            .offset         = 3 * sizeof(float),
+        }};
+
+        const vk::PipelineVertexInputStateCreateInfo vertexInput
+        {
+            .vertexBindingDescriptionCount      = 1,
+            .pVertexBindingDescriptions         = &vertexInputBinding,
+            .vertexAttributeDescriptionCount    = 2,
+            .pVertexAttributeDescriptions       = vertexAttributeDescriptions,
+        };
 
         constexpr vk::PipelineInputAssemblyStateCreateInfo inputAssembly
         {
@@ -868,7 +900,7 @@ namespace flux
                 .pStages                = shaderStages,
 
                 // fixed-function stages
-                .pVertexInputState      = &vertexInputInfo,
+                .pVertexInputState      = &vertexInput,
                 .pInputAssemblyState    = &inputAssembly,
                 .pViewportState         = &viewportState,
                 .pRasterizationState    = &rasterizer,
@@ -904,6 +936,70 @@ namespace flux
         spdlog::info("created a pipeline for '{}'", shaderURL);
 
         return pipeline;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////// BUFFERS /////////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::createVertexBuffer()
+    {
+        constexpr float vertices[]
+        {
+            // position             -       color
+            -0.5f, -0.5f, 0.0f,         1.0f, 0.0f, 0.0f,
+             0.5f, -0.5f, 0.0f,         0.0f, 1.0f, 0.0f,
+             0.0f,  0.5f, 0.0f,         0.0f, 0.0f, 1.0f,
+        };
+
+        const vk::BufferCreateInfo bufferInfo
+        {
+            .size               = sizeof(vertices),
+            .usage              = vk::BufferUsageFlagBits::eVertexBuffer,
+            .sharingMode        = vk::SharingMode::eExclusive,
+        };
+
+        m_vbo = vk::raii::Buffer(m_device, bufferInfo);
+
+        const vk::MemoryRequirements memReqs{ m_vbo.getMemoryRequirements() };
+        const vk::PhysicalDeviceMemoryProperties memProps{ m_physicalDevice.getMemoryProperties() };
+
+        constexpr vk::MemoryPropertyFlags flags
+        {
+            vk::MemoryPropertyFlagBits::eHostVisible |
+            vk::MemoryPropertyFlagBits::eHostCoherent
+        };
+
+        uint32_t memType{ ~0U };
+        for (uint32_t i{}; i < memProps.memoryTypeCount; ++i)
+        {
+            if ((memReqs.memoryTypeBits & (1U << i)) &&
+                (memProps.memoryTypes[i].propertyFlags & flags) == flags)
+            {
+                memType = i;
+                break;
+            }
+        }
+
+        if (memType == ~0U)
+        {
+            throw std::runtime_error{"failed to find suitable memory type!"};
+        }
+
+        const vk::MemoryAllocateInfo memAllocInfo
+        {
+            .allocationSize         = memReqs.size,
+            .memoryTypeIndex        = memType,
+        };
+
+        m_vboMemory = vk::raii::DeviceMemory(m_device, memAllocInfo);
+
+        m_vbo.bindMemory(*m_vboMemory, 0);
+
+        void* data{ m_vboMemory.mapMemory(0, bufferInfo.size) };
+        memcpy(data, vertices, bufferInfo.size);
+        m_vboMemory.unmapMemory();
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -1025,6 +1121,7 @@ namespace flux
 
         cmdBuffer.beginRendering(renderInfo);
         cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_basicPipeline);
+        cmdBuffer.bindVertexBuffers(0, *m_vbo, { 0 });
         cmdBuffer.setViewport(0, vk::Viewport(0.0f,
                                               0.0f,
                                               static_cast<float>(m_swapchainExtent.width),
