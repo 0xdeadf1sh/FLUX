@@ -5,6 +5,7 @@
 #include "vulkan/vulkan_raii.hpp"
 
 #include <GLFW/glfw3.h>
+#include <cstdint>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
@@ -46,15 +47,16 @@ namespace flux
                                                  m_basicPipelineLayout);
 
         ///////////////////////////////////////////////////////////////////////////
-        ////////////////////////////////// BUFFERS ////////////////////////////////
-        ///////////////////////////////////////////////////////////////////////////
-        createVertexBuffer();
-
-        ///////////////////////////////////////////////////////////////////////////
         /////////////////////////// VULKAN COMMAND OBJECTS ////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         createCommandPool();
+        createMemoryCommandPool();
         createCommandBuffers();
+
+        ///////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////// BUFFERS ////////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+        createVertexBuffer();
 
         ///////////////////////////////////////////////////////////////////////////
         ///////////////////////// SYNCHRONIZATION OBJECTS /////////////////////////
@@ -943,39 +945,21 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
 
     ///////////////////////////////////////////////////////////////////////////
-    void renderer::createVertexBuffer()
+    static uint32_t
+    findMemoryTypeIndex
+    (
+        uint32_t                            typeFilter,
+        vk::MemoryPropertyFlags             properties,
+        const vk::raii::PhysicalDevice&     physicalDevice
+    )
     {
-        constexpr float vertices[]
-        {
-            // position             -       color
-            -0.5f, -0.5f, 0.0f,         1.0f, 0.0f, 0.0f,
-             0.5f, -0.5f, 0.0f,         0.0f, 1.0f, 0.0f,
-             0.0f,  0.5f, 0.0f,         0.0f, 0.0f, 1.0f,
-        };
-
-        const vk::BufferCreateInfo bufferInfo
-        {
-            .size               = sizeof(vertices),
-            .usage              = vk::BufferUsageFlagBits::eVertexBuffer,
-            .sharingMode        = vk::SharingMode::eExclusive,
-        };
-
-        m_vbo = vk::raii::Buffer(m_device, bufferInfo);
-
-        const vk::MemoryRequirements memReqs{ m_vbo.getMemoryRequirements() };
-        const vk::PhysicalDeviceMemoryProperties memProps{ m_physicalDevice.getMemoryProperties() };
-
-        constexpr vk::MemoryPropertyFlags flags
-        {
-            vk::MemoryPropertyFlagBits::eHostVisible |
-            vk::MemoryPropertyFlagBits::eHostCoherent
-        };
+        const vk::PhysicalDeviceMemoryProperties memProps{ physicalDevice.getMemoryProperties() };
 
         uint32_t memType{ ~0U };
         for (uint32_t i{}; i < memProps.memoryTypeCount; ++i)
         {
-            if ((memReqs.memoryTypeBits & (1U << i)) &&
-                (memProps.memoryTypes[i].propertyFlags & flags) == flags)
+            if ((typeFilter & (1U << i)) &&
+                (memProps.memoryTypes[i].propertyFlags & properties) == properties)
             {
                 memType = i;
                 break;
@@ -987,19 +971,131 @@ namespace flux
             throw std::runtime_error{"failed to find suitable memory type!"};
         }
 
-        const vk::MemoryAllocateInfo memAllocInfo
+        return memType;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    static std::pair<vk::raii::Buffer,
+                     vk::raii::DeviceMemory>
+    createBuffer
+    (
+        vk::DeviceSize                  size,
+        vk::BufferUsageFlags            usage,
+        vk::MemoryPropertyFlags         props,
+        const vk::raii::Device&         device,
+        const vk::raii::PhysicalDevice& physicalDevice)
+    {
+        const vk::BufferCreateInfo bufferInfo
         {
-            .allocationSize         = memReqs.size,
-            .memoryTypeIndex        = memType,
+            .size                   = size,
+            .usage                  = usage,
+            .sharingMode            = vk::SharingMode::eExclusive,
         };
 
-        m_vboMemory = vk::raii::DeviceMemory(m_device, memAllocInfo);
+        auto buffer{ vk::raii::Buffer(device, bufferInfo) };
 
-        m_vbo.bindMemory(*m_vboMemory, 0);
+        const vk::MemoryRequirements memReqs{ buffer.getMemoryRequirements() };
 
-        void* data{ m_vboMemory.mapMemory(0, bufferInfo.size) };
-        memcpy(data, vertices, bufferInfo.size);
-        m_vboMemory.unmapMemory();
+        const vk::MemoryAllocateInfo allocInfo
+        {
+            .allocationSize = memReqs.size,
+            .memoryTypeIndex = findMemoryTypeIndex(memReqs.memoryTypeBits,
+                                                   props,
+                                                   physicalDevice),
+        };
+
+        auto bufferMemory{ vk::raii::DeviceMemory(device, allocInfo) };
+
+        buffer.bindMemory(*bufferMemory, 0);
+
+        return { std::move(buffer), std::move(bufferMemory) };
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    static void copyBuffer
+    (
+        const vk::raii::Buffer&         dstBuffer,
+        const vk::raii::Buffer&         srcBuffer,
+        vk::DeviceSize                  size,
+        const vk::raii::CommandPool&    cmdPool,
+        const vk::raii::Device&         device,
+        const vk::raii::Queue&          memoryQueue
+    )
+    {
+        const vk::CommandBufferAllocateInfo allocInfo
+        {
+            .commandPool            = cmdPool,
+            .level                  = vk::CommandBufferLevel::ePrimary,
+            .commandBufferCount     = 1,
+        };
+
+        const vk::raii::CommandBuffer cmdBuffer
+        { std::move(device.allocateCommandBuffers(allocInfo).front()) };
+
+        cmdBuffer.begin
+        ({
+            .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
+        });
+
+        cmdBuffer.copyBuffer(*srcBuffer,
+                             *dstBuffer,
+                             vk::BufferCopy(0, 0, size));
+
+        cmdBuffer.end();
+
+        const vk::SubmitInfo submitInfo
+        {
+            .commandBufferCount     = 1,
+            .pCommandBuffers        = &*cmdBuffer,
+        };
+
+        memoryQueue.submit(submitInfo, nullptr);
+        memoryQueue.waitIdle();
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::createVertexBuffer()
+    {
+        constexpr float vertices[]
+        {
+            // position             -       color
+            -0.5f, -0.5f, 0.0f,         1.0f, 0.0f, 0.0f,
+             0.5f, -0.5f, 0.0f,         0.0f, 1.0f, 0.0f,
+             0.0f,  0.5f, 0.0f,         0.0f, 0.0f, 1.0f,
+        };
+
+        const vk::DeviceSize bufferSize{ sizeof(vertices) };
+
+        auto [tmpBuffer, tmpBufferMemory] = createBuffer
+        (
+            bufferSize,
+            vk::BufferUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            m_device,
+            m_physicalDevice
+        );
+
+        void* data{ tmpBufferMemory.mapMemory(0, bufferSize) };
+        memcpy(data, vertices, bufferSize);
+        tmpBufferMemory.unmapMemory();
+
+        std::tie(m_vbo, m_vboMemory) = createBuffer
+        (
+            bufferSize,
+            vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            m_device,
+            m_physicalDevice
+        );
+
+        copyBuffer(m_vbo,
+                   tmpBuffer,
+                   bufferSize,
+                   m_memoryCmdPool,
+                   m_device,
+                   m_graphicsQueue);
+
+        spdlog::info("copied {} bytes from staging to device-local buffer", bufferSize);
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -1018,6 +1114,20 @@ namespace flux
         m_cmdPool = vk::raii::CommandPool(m_device, poolInfo);
 
         spdlog::info("created a command pool");
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::createMemoryCommandPool()
+    {
+        const vk::CommandPoolCreateInfo poolInfo
+        {
+            .flags              = vk::CommandPoolCreateFlagBits::eTransient,
+            .queueFamilyIndex   = m_graphicsQueueFamilyIndex,
+        };
+
+        m_memoryCmdPool = vk::raii::CommandPool(m_device, poolInfo);
+
+        spdlog::info("created a command pool for memory transfer ops");
     }
 
     ///////////////////////////////////////////////////////////////////////////

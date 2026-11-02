@@ -69,6 +69,7 @@ namespace flux
         ////////////////////////////// VULKAN COMMANDS ////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         void createCommandPool();
+        void createMemoryCommandPool();
         void createCommandBuffers();
         void recordCommandBuffers(uint32_t imageIndex);
 
@@ -147,6 +148,7 @@ namespace flux
         //////////////////////// VULKAN COMMAND OBJECTS ///////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         vk::raii::CommandPool m_cmdPool                     { nullptr };
+        vk::raii::CommandPool m_memoryCmdPool               { nullptr };
         std::vector<vk::raii::CommandBuffer> m_cmdBuffers   {};
 
         ///////////////////////////////////////////////////////////////////////////

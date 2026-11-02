@@ -1,9 +1,12 @@
 #include "renderer/renderer.hpp"
 
+#include <spdlog/spdlog.h>
 #include <print>
 
 int main(int argc, char** argv)
 {
+    spdlog::flush_on(spdlog::level::info);
+
     try
     {
         flux::renderer renderer{argc, argv};
