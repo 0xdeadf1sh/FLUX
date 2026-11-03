@@ -1,6 +1,7 @@
 #pragma once
 
 #include "window.hpp"
+#include "pipelines/graphics/common.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 #include <GLFW/glfw3.h>
@@ -60,10 +61,7 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         //////////////////////////// GRAPHICS PIPELINES ///////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        vk::raii::ShaderModule createShaderModule(const std::vector<char>& bytes);
-        vk::raii::PipelineLayout createPipelineLayout();
-        vk::raii::Pipeline createPipeline(std::string_view url,
-                                          const vk::raii::PipelineLayout&);
+        void createGraphicsPipelines();
 
         ///////////////////////////////////////////////////////////////////////////
         ////////////////////////////// VULKAN COMMANDS ////////////////////////////
@@ -135,8 +133,8 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         ////////////////////////// GRAPHICS PIPELINES /////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        vk::raii::PipelineLayout m_basicPipelineLayout      { nullptr };
-        vk::raii::Pipeline m_basicPipeline                  { nullptr };
+        std::vector<std::unique_ptr<pipelines::graphics::common>>
+        m_graphicsPipelines                                 {};
 
         ///////////////////////////////////////////////////////////////////////////
         /////////////////////////// FRAMES IN FLIGHT //////////////////////////////

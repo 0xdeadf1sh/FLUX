@@ -14,12 +14,6 @@
 #include <cassert>
 #include <limits>
 
-#ifndef NDEBUG
-#define FLUX_SHADERS_PATH "build/bin/shaders/"
-#else
-#define FLUX_SHADERS_PATH "shaders/"
-#endif
-
 namespace flux
 {
     ///////////////////////////////////////////////////////////////////////////
@@ -42,9 +36,7 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         //////////////////////////// GRAPHICS PIPELINES ///////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        m_basicPipelineLayout   = createPipelineLayout();
-        m_basicPipeline         = createPipeline(FLUX_SHADERS_PATH "basic.slang.spv",
-                                                 m_basicPipelineLayout);
+        createGraphicsPipelines();
 
         ///////////////////////////////////////////////////////////////////////////
         /////////////////////////// VULKAN COMMAND OBJECTS ////////////////////////
@@ -743,201 +735,20 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
     /////////////////////////// GRAPHICS PIPELINES ////////////////////////////
     ///////////////////////////////////////////////////////////////////////////
-
-    ///////////////////////////////////////////////////////////////////////////
-    vk::raii::ShaderModule renderer::createShaderModule(const std::vector<char>& bytecode)
+    void renderer::createGraphicsPipelines()
     {
-        const vk::ShaderModuleCreateInfo createInfo
+        const vk::PipelineRenderingCreateInfo renderInfo
         {
-            .codeSize   = bytecode.size(),
-            .pCode      = reinterpret_cast<const uint32_t*>(&bytecode[0])
+            .colorAttachmentCount       = 1,
+            .pColorAttachmentFormats    = &m_swapchainSurfaceFormat.format,
         };
 
-        return vk::raii::ShaderModule(m_device, createInfo);
-    }
-
-    ///////////////////////////////////////////////////////////////////////////
-    vk::raii::PipelineLayout renderer::createPipelineLayout()
-    {
-        constexpr vk::PipelineLayoutCreateInfo pipelineLayoutInfo
-        {
-            .setLayoutCount             = 0,
-            .pushConstantRangeCount     = 0,
-        };
-
-        vk::raii::PipelineLayout pipelineLayout
-        { vk::raii::PipelineLayout(m_device, pipelineLayoutInfo) };
-
-        return pipelineLayout;
-    }
-
-    ///////////////////////////////////////////////////////////////////////////
-    vk::raii::Pipeline renderer::createPipeline(std::string_view shaderURL,
-                                                const vk::raii::PipelineLayout& layout)
-    {
-        const std::vector<char> shaderCode{ utils::readBinaryFile(shaderURL) };
-        spdlog::info("loaded shader {} with {} bytes", shaderURL, shaderCode.size());
-
-        const vk::raii::ShaderModule shaderModule{ createShaderModule(shaderCode) };
-
-        const vk::PipelineShaderStageCreateInfo vertexShaderStageInfo
-        {
-            .stage                  = vk::ShaderStageFlagBits::eVertex,
-            .module                 = shaderModule,
-            .pName                  = "vmain",
-            .pSpecializationInfo    = nullptr,
-        };
-
-        const vk::PipelineShaderStageCreateInfo fragmentShaderStageInfo
-        {
-            .stage                  = vk::ShaderStageFlagBits::eFragment,
-            .module                 = shaderModule,
-            .pName                  = "fmain",
-            .pSpecializationInfo    = nullptr,
-        };
-
-        const vk::PipelineShaderStageCreateInfo shaderStages[]
-        {
-            vertexShaderStageInfo,
-            fragmentShaderStageInfo,
-        };
-
-        const std::vector<vk::DynamicState> dynamicStates
-        {
-            vk::DynamicState::eViewport,
-            vk::DynamicState::eScissor,
-        };
-
-        const vk::PipelineDynamicStateCreateInfo dynamicStateInfo
-        {
-            .dynamicStateCount  = static_cast<uint32_t>(dynamicStates.size()),
-            .pDynamicStates     = &dynamicStates[0],
-        };
-
-        constexpr vk::PipelineViewportStateCreateInfo viewportState
-        {
-            .viewportCount  = 1,
-            .scissorCount   = 1,
-        };
-
-        constexpr vk::VertexInputBindingDescription vertexInputBinding
-        {
-            .binding        = 0,
-            .stride         = 6 * sizeof(float),
-            .inputRate      = vk::VertexInputRate::eVertex,
-        };
-
-        constexpr vk::VertexInputAttributeDescription vertexAttributeDescriptions[]
-        {{
-            .location       = 0,
-            .binding        = 0,
-            .format         = vk::Format::eR32G32B32Sfloat,
-            .offset         = 0,
-        },
-        {
-            .location       = 1,
-            .binding        = 0,
-            .format         = vk::Format::eR32G32B32Sfloat,
-            .offset         = 3 * sizeof(float),
-        }};
-
-        const vk::PipelineVertexInputStateCreateInfo vertexInput
-        {
-            .vertexBindingDescriptionCount      = 1,
-            .pVertexBindingDescriptions         = &vertexInputBinding,
-            .vertexAttributeDescriptionCount    = 2,
-            .pVertexAttributeDescriptions       = vertexAttributeDescriptions,
-        };
-
-        constexpr vk::PipelineInputAssemblyStateCreateInfo inputAssembly
-        {
-            .topology = vk::PrimitiveTopology::eTriangleList,
-        };
-
-        constexpr vk::PipelineRasterizationStateCreateInfo rasterizer
-        {
-            .depthClampEnable           = vk::False,
-            .rasterizerDiscardEnable    = vk::False,
-            .polygonMode                = vk::PolygonMode::eFill,
-            .cullMode                   = vk::CullModeFlagBits::eBack,
-            .frontFace                  = vk::FrontFace::eCounterClockwise,
-            .depthBiasEnable            = vk::False,
-            .lineWidth                  = 1.0f,
-        };
-
-        constexpr vk::PipelineMultisampleStateCreateInfo multisampling
-        {
-            .rasterizationSamples       = vk::SampleCountFlagBits::e1,
-            .sampleShadingEnable        = vk::False,
-        };
-
-        constexpr vk::PipelineColorBlendAttachmentState colorBlendAttachment
-        {
-            .blendEnable                = vk::False,
-            .colorWriteMask             = vk::ColorComponentFlagBits::eR |
-                                          vk::ColorComponentFlagBits::eG |
-                                          vk::ColorComponentFlagBits::eB |
-                                          vk::ColorComponentFlagBits::eA,
-        };
-
-        const vk::PipelineColorBlendStateCreateInfo colorBlending
-        {
-            .logicOpEnable              = vk::False, // when True, blendEnable becomes False
-            .logicOp                    = vk::LogicOp::eCopy,
-            .attachmentCount            = 1,
-            .pAttachments               = &colorBlendAttachment,
-        };
-
-        const vk::StructureChain
-        <
-            vk::GraphicsPipelineCreateInfo,
-            vk::PipelineRenderingCreateInfo
-        >
-        createInfo
-        {
-            // graphics pipeline
-            {
-                // programmable stages
-                .stageCount             = 2,
-                .pStages                = shaderStages,
-
-                // fixed-function stages
-                .pVertexInputState      = &vertexInput,
-                .pInputAssemblyState    = &inputAssembly,
-                .pViewportState         = &viewportState,
-                .pRasterizationState    = &rasterizer,
-                .pMultisampleState      = &multisampling,
-                .pColorBlendState       = &colorBlending,
-                .pDynamicState          = &dynamicStateInfo,
-
-                // pipeline layout
-                .layout                 = layout,
-
-                // no renderpass needed
-                .renderPass             = nullptr,
-
-                // parent pipeline
-                .basePipelineHandle     = nullptr,
-                .basePipelineIndex      = 0,
-                // .flags               = vk::PipelineCreateFlagBits::eDerivative,
-            },
-
-            // dynamic rendering
-            {
-                .colorAttachmentCount   = 1,
-                .pColorAttachmentFormats = &m_swapchainSurfaceFormat.format,
-            }
-        };
-
-        const vk::raii::PipelineCache cache{ nullptr };
-
-        vk::raii::Pipeline pipeline(m_device,
-                                    cache,
-                                    createInfo.get<vk::GraphicsPipelineCreateInfo>());
-
-        spdlog::info("created a pipeline for '{}'", shaderURL);
-
-        return pipeline;
+        m_graphicsPipelines.push_back
+        (
+            pipelines::graphics::create(pipelines::graphics::name::basic,
+                                        m_device,
+                                        renderInfo)
+        );
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -1058,7 +869,7 @@ namespace flux
     {
         constexpr float vertices[]
         {
-            // position             -       color
+            // position                     color
             -0.5f, -0.5f, 0.0f,         1.0f, 0.0f, 0.0f,
              0.5f, -0.5f, 0.0f,         0.0f, 1.0f, 0.0f,
              0.0f,  0.5f, 0.0f,         0.0f, 0.0f, 1.0f,
@@ -1230,7 +1041,7 @@ namespace flux
         };
 
         cmdBuffer.beginRendering(renderInfo);
-        cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_basicPipeline);
+        m_graphicsPipelines[0]->bind(cmdBuffer);
         cmdBuffer.bindVertexBuffers(0, *m_vbo, { 0 });
         cmdBuffer.setViewport(0, vk::Viewport(0.0f,
                                               0.0f,

@@ -36,6 +36,8 @@ find_package(spdlog REQUIRED)
 add_executable(${PROJECT_NAME})
 
 target_sources(${PROJECT_NAME} PRIVATE
+    src/renderer/pipelines/graphics/common.cpp
+    src/renderer/pipelines/graphics/basic.cpp
     src/renderer/renderer.cpp
     src/main.cpp)
 
@@ -87,9 +89,9 @@ endif()
 #################### SHADERS ####################
 include(FluxCompileShaders)
 
-add_slang_shader_target(shaders
-    OUTPUT_DIR  ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders
+add_slang_shader_target(graphics_shaders
+    OUTPUT_DIR  ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/graphics
     INCLUDE_DIR shaders/common
-    SOURCES     shaders/renderer/basic.slang)
+    SOURCES     shaders/graphics/basic.slang)
 
-add_dependencies(${PROJECT_NAME} shaders)
+add_dependencies(${PROJECT_NAME} graphics_shaders)
