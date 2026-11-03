@@ -1,12 +1,10 @@
 #pragma once
 
 #include "window.hpp"
-#include "pipelines/graphics/common.hpp"
+#include "pipelines/graphics/pool.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 #include <GLFW/glfw3.h>
-
-#include <string_view>
 
 namespace flux
 {
@@ -133,8 +131,7 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         ////////////////////////// GRAPHICS PIPELINES /////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        std::vector<std::unique_ptr<pipelines::graphics::common>>
-        m_graphicsPipelines                                 {};
+        pipelines::graphics::pool m_graphicsPipelines       {};
 
         ///////////////////////////////////////////////////////////////////////////
         /////////////////////////// FRAMES IN FLIGHT //////////////////////////////

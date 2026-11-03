@@ -743,12 +743,7 @@ namespace flux
             .pColorAttachmentFormats    = &m_swapchainSurfaceFormat.format,
         };
 
-        m_graphicsPipelines.push_back
-        (
-            pipelines::graphics::create(pipelines::graphics::name::basic,
-                                        m_device,
-                                        renderInfo)
-        );
+        m_graphicsPipelines.init(m_device, renderInfo);
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -1041,7 +1036,7 @@ namespace flux
         };
 
         cmdBuffer.beginRendering(renderInfo);
-        m_graphicsPipelines[0]->bind(cmdBuffer);
+        m_graphicsPipelines.bind(pipelines::graphics::name::basic, cmdBuffer);
         cmdBuffer.bindVertexBuffers(0, *m_vbo, { 0 });
         cmdBuffer.setViewport(0, vk::Viewport(0.0f,
                                               0.0f,

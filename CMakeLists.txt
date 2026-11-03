@@ -38,6 +38,7 @@ add_executable(${PROJECT_NAME})
 target_sources(${PROJECT_NAME} PRIVATE
     src/renderer/pipelines/graphics/common.cpp
     src/renderer/pipelines/graphics/basic.cpp
+    src/renderer/pipelines/graphics/pool.cpp
     src/renderer/renderer.cpp
     src/main.cpp)
 
