@@ -78,14 +78,15 @@ namespace flux
         ///////////////////////////////// BUFFERS /////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         void createVertexBuffer();
+        void createIndexBuffer();
 
         ///////////////////////////////////////////////////////////////////////////
         //////////////////////////////// AUXILIARY ////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>&);
-        vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>&);
-        vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR&);
-        uint32_t chooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR&);
+        vk::SurfaceFormatKHR chooseSwapSurfaceFormat    (const std::vector<vk::SurfaceFormatKHR>&);
+        vk::PresentModeKHR chooseSwapPresentMode        (const std::vector<vk::PresentModeKHR>&);
+        vk::Extent2D chooseSwapExtent                   (const vk::SurfaceCapabilitiesKHR&);
+        uint32_t chooseSwapMinImageCount                (const vk::SurfaceCapabilitiesKHR&);
 
         ///////////////////////////////////////////////////////////////////////////
         /////////////////////////////// RENDER LOOP ///////////////////////////////
@@ -126,10 +127,10 @@ namespace flux
         vk::SurfaceFormatKHR m_swapchainSurfaceFormat       {};
         vk::raii::SwapchainKHR m_swapchain                  { nullptr };
         std::vector<vk::Image> m_swapchainImages            {};
-        std::vector<vk::raii::ImageView> m_swapchainImageViews {};
+        std::vector<vk::raii::ImageView> m_swapchainImageViews{};
 
         ///////////////////////////////////////////////////////////////////////////
-        ////////////////////////// GRAPHICS PIPELINES /////////////////////////////
+        /////////////////////////////// PIPELINES /////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         pipelines::graphics::pool m_graphicsPipelines       {};
 
@@ -158,5 +159,7 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         vk::raii::Buffer m_vbo                              { nullptr };
         vk::raii::DeviceMemory m_vboMemory                  { nullptr };
+        vk::raii::Buffer m_ebo                              { nullptr };
+        vk::raii::DeviceMemory m_eboMemory                  { nullptr };
     };
 }

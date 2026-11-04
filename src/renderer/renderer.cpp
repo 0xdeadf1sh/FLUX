@@ -49,6 +49,7 @@ namespace flux
         ////////////////////////////////// BUFFERS ////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         createVertexBuffer();
+        createIndexBuffer();
 
         ///////////////////////////////////////////////////////////////////////////
         ///////////////////////// SYNCHRONIZATION OBJECTS /////////////////////////
@@ -867,7 +868,8 @@ namespace flux
             // position                     color
             -0.5f, -0.5f, 0.0f,         1.0f, 0.0f, 0.0f,
              0.5f, -0.5f, 0.0f,         0.0f, 1.0f, 0.0f,
-             0.0f,  0.5f, 0.0f,         0.0f, 0.0f, 1.0f,
+            -0.5f,  0.5f, 0.0f,         0.0f, 0.0f, 1.0f,
+             0.5f,  0.5f, 0.0f,         0.0f, 1.0f, 1.0f,
         };
 
         const vk::DeviceSize bufferSize{ sizeof(vertices) };
@@ -895,6 +897,45 @@ namespace flux
         );
 
         copyBuffer(m_vbo,
+                   tmpBuffer,
+                   bufferSize,
+                   m_memoryCmdPool,
+                   m_device,
+                   m_graphicsQueue);
+
+        spdlog::info("copied {} bytes from staging to device-local buffer", bufferSize);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::createIndexBuffer()
+    {
+        constexpr uint32_t indices[]{ 0, 1, 2, 2, 1, 3 };
+
+        const vk::DeviceSize bufferSize{ sizeof(indices) };
+
+        auto [tmpBuffer, tmpBufferMemory] = createBuffer
+        (
+            bufferSize,
+            vk::BufferUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            m_device,
+            m_physicalDevice
+        );
+
+        void* data{ tmpBufferMemory.mapMemory(0, bufferSize) };
+        memcpy(data, indices, bufferSize);
+        tmpBufferMemory.unmapMemory();
+
+        std::tie(m_ebo, m_eboMemory) = createBuffer
+        (
+            bufferSize,
+            vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            m_device,
+            m_physicalDevice
+        );
+
+        copyBuffer(m_ebo,
                    tmpBuffer,
                    bufferSize,
                    m_memoryCmdPool,
@@ -959,7 +1000,7 @@ namespace flux
         vk::PipelineStageFlags2     srcStageMask,
         vk::PipelineStageFlags2     dstStageMask,
         const vk::Image&            image,
-        const vk::CommandBuffer     cmdBuffer
+        const vk::CommandBuffer&    cmdBuffer
     )
     {
         const vk::ImageMemoryBarrier2 barrier
@@ -1038,12 +1079,13 @@ namespace flux
         cmdBuffer.beginRendering(renderInfo);
         m_graphicsPipelines.bind(pipelines::graphics::name::basic, cmdBuffer);
         cmdBuffer.bindVertexBuffers(0, *m_vbo, { 0 });
+        cmdBuffer.bindIndexBuffer(*m_ebo, 0, vk::IndexType::eUint32);
         cmdBuffer.setViewport(0, vk::Viewport(0.0f,
                                               0.0f,
                                               static_cast<float>(m_swapchainExtent.width),
                                               static_cast<float>(m_swapchainExtent.height)));
         cmdBuffer.setScissor(0, vk::Rect2D{ {0, 0}, m_swapchainExtent });
-        cmdBuffer.draw(3, 1, 0, 0);
+        cmdBuffer.drawIndexed(6, 1, 0, 0, 0);
         cmdBuffer.endRendering();
 
         transitionImageLayout(vk::ImageLayout::eColorAttachmentOptimal,
