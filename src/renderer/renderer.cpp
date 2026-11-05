@@ -3,6 +3,10 @@
 
 #include "vulkan/vulkan.hpp"
 #include "vulkan/vulkan_raii.hpp"
+#include <vk_mem_alloc_enums.hpp>
+
+#define VMA_IMPLEMENTATION
+#include <vk_mem_alloc.h>
 
 #include <GLFW/glfw3.h>
 #include <cstdint>
@@ -48,6 +52,7 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         ////////////////////////////////// BUFFERS ////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
+        createAllocator();
         createVertexBuffer();
         createIndexBuffer();
 
@@ -752,45 +757,12 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
 
     ///////////////////////////////////////////////////////////////////////////
-    static uint32_t
-    findMemoryTypeIndex
+    static vma::raii::Buffer createBuffer
     (
-        uint32_t                            typeFilter,
-        vk::MemoryPropertyFlags             properties,
-        const vk::raii::PhysicalDevice&     physicalDevice
-    )
-    {
-        const vk::PhysicalDeviceMemoryProperties memProps{ physicalDevice.getMemoryProperties() };
-
-        uint32_t memType{ ~0U };
-        for (uint32_t i{}; i < memProps.memoryTypeCount; ++i)
-        {
-            if ((typeFilter & (1U << i)) &&
-                (memProps.memoryTypes[i].propertyFlags & properties) == properties)
-            {
-                memType = i;
-                break;
-            }
-        }
-
-        if (memType == ~0U)
-        {
-            throw std::runtime_error{"failed to find suitable memory type!"};
-        }
-
-        return memType;
-    }
-
-    ///////////////////////////////////////////////////////////////////////////
-    static std::pair<vk::raii::Buffer,
-                     vk::raii::DeviceMemory>
-    createBuffer
-    (
+        vma::raii::Allocator&           allocator,
         vk::DeviceSize                  size,
         vk::BufferUsageFlags            usage,
-        vk::MemoryPropertyFlags         props,
-        const vk::raii::Device&         device,
-        const vk::raii::PhysicalDevice& physicalDevice)
+        vma::AllocationCreateFlags      allocFlags)
     {
         const vk::BufferCreateInfo bufferInfo
         {
@@ -799,30 +771,20 @@ namespace flux
             .sharingMode            = vk::SharingMode::eExclusive,
         };
 
-        auto buffer{ vk::raii::Buffer(device, bufferInfo) };
-
-        const vk::MemoryRequirements memReqs{ buffer.getMemoryRequirements() };
-
-        const vk::MemoryAllocateInfo allocInfo
+        const vma::AllocationCreateInfo allocInfo
         {
-            .allocationSize = memReqs.size,
-            .memoryTypeIndex = findMemoryTypeIndex(memReqs.memoryTypeBits,
-                                                   props,
-                                                   physicalDevice),
+            allocFlags,
+            vma::MemoryUsage::eAuto,
         };
 
-        auto bufferMemory{ vk::raii::DeviceMemory(device, allocInfo) };
-
-        buffer.bindMemory(*bufferMemory, 0);
-
-        return { std::move(buffer), std::move(bufferMemory) };
+        return allocator.createBuffer(bufferInfo, allocInfo);
     }
 
     ///////////////////////////////////////////////////////////////////////////
     static void copyBuffer
     (
-        const vk::raii::Buffer&         dstBuffer,
-        const vk::raii::Buffer&         srcBuffer,
+        const vma::raii::Buffer&        dstBuffer,
+        const vma::raii::Buffer&        srcBuffer,
         vk::DeviceSize                  size,
         const vk::raii::CommandPool&    cmdPool,
         const vk::raii::Device&         device,
@@ -874,30 +836,27 @@ namespace flux
 
         const vk::DeviceSize bufferSize{ sizeof(vertices) };
 
-        auto [tmpBuffer, tmpBufferMemory] = createBuffer
+        vma::raii::Buffer stagingBuffer = createBuffer
         (
+            m_vma,
             bufferSize,
             vk::BufferUsageFlagBits::eTransferSrc,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            m_device,
-            m_physicalDevice
+            vma::AllocationCreateFlagBits::eHostAccessSequentialWrite
         );
 
-        void* data{ tmpBufferMemory.mapMemory(0, bufferSize) };
-        memcpy(data, vertices, bufferSize);
-        tmpBufferMemory.unmapMemory();
+        const vma::raii::Allocation& alloc{ stagingBuffer.getAllocation() };
+        alloc.copyFromMemory(vertices, {}, bufferSize);
 
-        std::tie(m_vbo, m_vboMemory) = createBuffer
+        m_vbo = createBuffer
         (
+            m_vma,
             bufferSize,
             vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            m_device,
-            m_physicalDevice
+            {}
         );
 
         copyBuffer(m_vbo,
-                   tmpBuffer,
+                   stagingBuffer,
                    bufferSize,
                    m_memoryCmdPool,
                    m_device,
@@ -913,36 +872,49 @@ namespace flux
 
         const vk::DeviceSize bufferSize{ sizeof(indices) };
 
-        auto [tmpBuffer, tmpBufferMemory] = createBuffer
+        vma::raii::Buffer stagingBuffer = createBuffer
         (
+            m_vma,
             bufferSize,
             vk::BufferUsageFlagBits::eTransferSrc,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            m_device,
-            m_physicalDevice
+            vma::AllocationCreateFlagBits::eHostAccessSequentialWrite
         );
 
-        void* data{ tmpBufferMemory.mapMemory(0, bufferSize) };
-        memcpy(data, indices, bufferSize);
-        tmpBufferMemory.unmapMemory();
+        const vma::raii::Allocation& alloc{ stagingBuffer.getAllocation() };
+        alloc.copyFromMemory(indices, {}, bufferSize);
 
-        std::tie(m_ebo, m_eboMemory) = createBuffer
+        m_ebo = createBuffer
         (
+            m_vma,
             bufferSize,
             vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
-            vk::MemoryPropertyFlagBits::eDeviceLocal,
-            m_device,
-            m_physicalDevice
+            {}
         );
 
         copyBuffer(m_ebo,
-                   tmpBuffer,
+                   stagingBuffer,
                    bufferSize,
                    m_memoryCmdPool,
                    m_device,
                    m_graphicsQueue);
 
         spdlog::info("copied {} bytes from staging to device-local buffer", bufferSize);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::createAllocator()
+    {
+        vma::AllocatorCreateInfo createInfo{};
+        createInfo.setPhysicalDevice(m_physicalDevice)
+                  .setVulkanApiVersion(VK_API_VERSION_1_4);
+
+        m_vma = vma::raii::createAllocator(m_instance,
+                                           m_device,
+                                           createInfo);
+
+        spdlog::info("created vulkan memory allocator (api {}.{})",
+                     vk::apiVersionMajor(VK_API_VERSION_1_4),
+                     vk::apiVersionMinor(VK_API_VERSION_1_4));
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -1053,7 +1025,9 @@ namespace flux
                               cmdBuffer);
 
         constexpr vk::ClearValue clearColor
-        { vk::ClearColorValue({{0.01f, 0.02f, 0.02f, 1.0f}}) };
+        {
+            vk::ClearColorValue({{0.01f, 0.02f, 0.02f, 1.0f}})
+        };
 
         const vk::RenderingAttachmentInfo attachmentInfo
         {

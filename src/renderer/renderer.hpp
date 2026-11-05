@@ -4,6 +4,8 @@
 #include "pipelines/graphics/pool.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
+#include <vk_mem_alloc_raii.hpp>
+
 #include <GLFW/glfw3.h>
 
 namespace flux
@@ -77,6 +79,7 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         ///////////////////////////////// BUFFERS /////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
+        void createAllocator();
         void createVertexBuffer();
         void createIndexBuffer();
 
@@ -157,9 +160,8 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         ///////////////////////////////// BUFFERS /////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        vk::raii::Buffer m_vbo                              { nullptr };
-        vk::raii::DeviceMemory m_vboMemory                  { nullptr };
-        vk::raii::Buffer m_ebo                              { nullptr };
-        vk::raii::DeviceMemory m_eboMemory                  { nullptr };
+        vma::raii::Allocator m_vma                          { nullptr };
+        vma::raii::Buffer m_vbo                             { nullptr };
+        vma::raii::Buffer m_ebo                             { nullptr };
     };
 }

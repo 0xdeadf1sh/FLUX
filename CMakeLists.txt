@@ -9,6 +9,12 @@ project(FLUX
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 include(FluxCompilerFlags)
 
+#################### AUTO-COMPLETION ####################
+file(CREATE_LINK
+    ${PROJECT_BINARY_DIR}/compile_commands.json
+    ${PROJECT_SOURCE_DIR}/compile_commands.json
+    SYMBOLIC)
+
 #################### GLOBAL DEFAULTS ####################
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
     message(FATAL_ERROR "In-source builds are not allowed, use cmake -B build.")
@@ -27,10 +33,20 @@ if(PROJECT_IS_TOP_LEVEL)
 endif()
 
 #################### DEPENDENCIES ####################
-find_package(Vulkan 1.4 REQUIRED)
-find_package(glfw3 REQUIRED)
-find_package(glm REQUIRED)
-find_package(spdlog REQUIRED)
+find_package(Vulkan 1.4                     REQUIRED)
+find_package(glfw3                          REQUIRED)
+find_package(glm                            REQUIRED)
+find_package(spdlog                         REQUIRED)
+
+include(FetchContent)
+FetchContent_Declare(
+    vmahpp
+    URL https://github.com/YaaZ/VulkanMemoryAllocator-Hpp/releases/download/v3.5.0%2B1/VulkanMemoryAllocator-Hpp-3.5.0.tar.gz
+    URL_HASH SHA256=b8d8d00e9575a6ce8c217bb6857bacf391212cae21f2c22695beb9609f2ef4a0
+    SYSTEM
+    EXCLUDE_FROM_ALL
+)
+FetchContent_MakeAvailable(vmahpp)
 
 #################### EXECUTABLE ####################
 add_executable(${PROJECT_NAME})
@@ -55,6 +71,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Vulkan::Vulkan
+    VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp
     glfw
     glm::glm
     spdlog::spdlog)
