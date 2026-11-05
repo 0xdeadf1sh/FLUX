@@ -4,3 +4,6 @@
 
 # build files
 /build
+
+# generated files
+compile_commands.json
