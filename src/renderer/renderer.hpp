@@ -1,11 +1,10 @@
 #pragma once
 
 #include "window.hpp"
+#include "buffer.hpp"
 #include "pipelines/graphics/pool.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
-#include <vk_mem_alloc_raii.hpp>
-
 #include <GLFW/glfw3.h>
 
 namespace flux
@@ -161,7 +160,7 @@ namespace flux
         ///////////////////////////////// BUFFERS /////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         vma::raii::Allocator m_vma                          { nullptr };
-        vma::raii::Buffer m_vbo                             { nullptr };
-        vma::raii::Buffer m_ebo                             { nullptr };
+        std::unique_ptr<buffer<float>> m_vbo                { nullptr };
+        std::unique_ptr<buffer<uint32_t>> m_ebo             { nullptr };
     };
 }

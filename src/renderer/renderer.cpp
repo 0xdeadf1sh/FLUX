@@ -3,7 +3,6 @@
 
 #include "vulkan/vulkan.hpp"
 #include "vulkan/vulkan_raii.hpp"
-#include <vk_mem_alloc_enums.hpp>
 
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
@@ -757,75 +756,9 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
 
     ///////////////////////////////////////////////////////////////////////////
-    static vma::raii::Buffer createBuffer
-    (
-        vma::raii::Allocator&           allocator,
-        vk::DeviceSize                  size,
-        vk::BufferUsageFlags            usage,
-        vma::AllocationCreateFlags      allocFlags)
-    {
-        const vk::BufferCreateInfo bufferInfo
-        {
-            .size                   = size,
-            .usage                  = usage,
-            .sharingMode            = vk::SharingMode::eExclusive,
-        };
-
-        const vma::AllocationCreateInfo allocInfo
-        {
-            allocFlags,
-            vma::MemoryUsage::eAuto,
-        };
-
-        return allocator.createBuffer(bufferInfo, allocInfo);
-    }
-
-    ///////////////////////////////////////////////////////////////////////////
-    static void copyBuffer
-    (
-        const vma::raii::Buffer&        dstBuffer,
-        const vma::raii::Buffer&        srcBuffer,
-        vk::DeviceSize                  size,
-        const vk::raii::CommandPool&    cmdPool,
-        const vk::raii::Device&         device,
-        const vk::raii::Queue&          memoryQueue
-    )
-    {
-        const vk::CommandBufferAllocateInfo allocInfo
-        {
-            .commandPool            = cmdPool,
-            .level                  = vk::CommandBufferLevel::ePrimary,
-            .commandBufferCount     = 1,
-        };
-
-        const vk::raii::CommandBuffer cmdBuffer
-        { std::move(device.allocateCommandBuffers(allocInfo).front()) };
-
-        cmdBuffer.begin
-        ({
-            .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
-        });
-
-        cmdBuffer.copyBuffer(*srcBuffer,
-                             *dstBuffer,
-                             vk::BufferCopy(0, 0, size));
-
-        cmdBuffer.end();
-
-        const vk::SubmitInfo submitInfo
-        {
-            .commandBufferCount     = 1,
-            .pCommandBuffers        = &*cmdBuffer,
-        };
-
-        memoryQueue.submit(submitInfo, nullptr);
-        memoryQueue.waitIdle();
-    }
-
-    ///////////////////////////////////////////////////////////////////////////
     void renderer::createVertexBuffer()
     {
-        constexpr float vertices[]
+        const std::vector<float> vertices
         {
             // position                     color
             -0.5f, -0.5f, 0.0f,         1.0f, 0.0f, 0.0f,
@@ -834,71 +767,41 @@ namespace flux
              0.5f,  0.5f, 0.0f,         0.0f, 1.0f, 1.0f,
         };
 
-        const vk::DeviceSize bufferSize{ sizeof(vertices) };
-
-        vma::raii::Buffer stagingBuffer = createBuffer
-        (
-            m_vma,
-            bufferSize,
-            vk::BufferUsageFlagBits::eTransferSrc,
-            vma::AllocationCreateFlagBits::eHostAccessSequentialWrite
-        );
-
-        const vma::raii::Allocation& alloc{ stagingBuffer.getAllocation() };
-        alloc.copyFromMemory(vertices, {}, bufferSize);
-
-        m_vbo = createBuffer
-        (
-            m_vma,
-            bufferSize,
-            vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
-            {}
-        );
-
-        copyBuffer(m_vbo,
-                   stagingBuffer,
-                   bufferSize,
-                   m_memoryCmdPool,
-                   m_device,
-                   m_graphicsQueue);
-
-        spdlog::info("copied {} bytes from staging to device-local buffer", bufferSize);
+        m_vbo = std::unique_ptr<buffer<float>>
+        {
+            new buffer
+            {
+                m_vma,
+                m_memoryCmdPool,
+                m_device,
+                m_graphicsQueue,
+                vk::BufferUsageFlagBits::eTransferDst |
+                vk::BufferUsageFlagBits::eVertexBuffer,
+                {},
+                vertices
+            }
+        };
     }
 
     ///////////////////////////////////////////////////////////////////////////
     void renderer::createIndexBuffer()
     {
-        constexpr uint32_t indices[]{ 0, 1, 2, 2, 1, 3 };
+        const std::vector<uint32_t> indices{ 0, 1, 2, 2, 1, 3 };
 
-        const vk::DeviceSize bufferSize{ sizeof(indices) };
-
-        vma::raii::Buffer stagingBuffer = createBuffer
-        (
-            m_vma,
-            bufferSize,
-            vk::BufferUsageFlagBits::eTransferSrc,
-            vma::AllocationCreateFlagBits::eHostAccessSequentialWrite
-        );
-
-        const vma::raii::Allocation& alloc{ stagingBuffer.getAllocation() };
-        alloc.copyFromMemory(indices, {}, bufferSize);
-
-        m_ebo = createBuffer
-        (
-            m_vma,
-            bufferSize,
-            vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
-            {}
-        );
-
-        copyBuffer(m_ebo,
-                   stagingBuffer,
-                   bufferSize,
-                   m_memoryCmdPool,
-                   m_device,
-                   m_graphicsQueue);
-
-        spdlog::info("copied {} bytes from staging to device-local buffer", bufferSize);
+        m_ebo = std::unique_ptr<buffer<uint32_t>>
+        {
+            new buffer
+            {
+                m_vma,
+                m_memoryCmdPool,
+                m_device,
+                m_graphicsQueue,
+                vk::BufferUsageFlagBits::eTransferDst |
+                vk::BufferUsageFlagBits::eIndexBuffer,
+                {},
+                indices
+            }
+        };
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -1052,8 +955,8 @@ namespace flux
 
         cmdBuffer.beginRendering(renderInfo);
         m_graphicsPipelines.bind(pipelines::graphics::name::basic, cmdBuffer);
-        cmdBuffer.bindVertexBuffers(0, *m_vbo, { 0 });
-        cmdBuffer.bindIndexBuffer(*m_ebo, 0, vk::IndexType::eUint32);
+        m_vbo->bind(cmdBuffer);
+        m_ebo->bind(cmdBuffer);
         cmdBuffer.setViewport(0, vk::Viewport(0.0f,
                                               0.0f,
                                               static_cast<float>(m_swapchainExtent.width),
