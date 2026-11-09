@@ -764,10 +764,10 @@ namespace flux
             vk::BufferUsageFlagBits::eTransferDst
         };
 
-        using vboDataType   = float;
-        using vboBuffer     = buffer<vboDataType, vboFlags>;
+        using vbo_data_type     = float;
+        using vbo_buffer_type   = vk_buffer<vbo_data_type, vboFlags>;
 
-        const std::vector<vboDataType> vertices
+        const std::vector<vbo_data_type> vertices
         {
             // position                     color
             -0.5f, -0.5f, 0.0f,         1.0f, 0.0f, 0.0f,
@@ -776,9 +776,9 @@ namespace flux
              0.5f,  0.5f, 0.0f,         0.0f, 1.0f, 1.0f,
         };
 
-        m_vbo = std::unique_ptr<vboBuffer>
+        m_vbo = std::unique_ptr<vbo_buffer_type>
         {
-            new vboBuffer
+            new vbo_buffer_type
             {
                 m_vma,
                 m_memoryCmdPool,
@@ -798,14 +798,14 @@ namespace flux
             vk::BufferUsageFlagBits::eTransferDst
         };
 
-        using eboDataType   = uint32_t;
-        using eboBuffer     = buffer<eboDataType, eboFlags>;
+        using ebo_data_type     = uint32_t;
+        using ebo_buffer_type   = vk_buffer<ebo_data_type, eboFlags>;
 
-        const std::vector<eboDataType> indices{ 0, 1, 2, 2, 1, 3 };
+        const std::vector<ebo_data_type> indices{ 0, 1, 2, 2, 1, 3 };
 
-        m_ebo = std::unique_ptr<eboBuffer>
+        m_ebo = std::unique_ptr<ebo_buffer_type>
         {
-            new eboBuffer
+            new ebo_buffer_type
             {
                 m_vma,
                 m_memoryCmdPool,

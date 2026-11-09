@@ -160,11 +160,11 @@ namespace flux
         ///////////////////////////////// BUFFERS /////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         vma::raii::Allocator m_vma                          { nullptr };
-        std::unique_ptr<buffer<float,
-                               vk::BufferUsageFlagBits::eVertexBuffer |
-                               vk::BufferUsageFlagBits::eTransferDst>> m_vbo{ nullptr };
-        std::unique_ptr<buffer<uint32_t,
-                               vk::BufferUsageFlagBits::eIndexBuffer |
-                               vk::BufferUsageFlagBits::eTransferDst>> m_ebo{ nullptr };
+        std::unique_ptr<vk_buffer<float,
+                                  vk::BufferUsageFlagBits::eVertexBuffer |
+                                  vk::BufferUsageFlagBits::eTransferDst>> m_vbo{ nullptr };
+        std::unique_ptr<vk_buffer<uint32_t,
+                                  vk::BufferUsageFlagBits::eIndexBuffer |
+                                  vk::BufferUsageFlagBits::eTransferDst>> m_ebo{ nullptr };
     };
 }
