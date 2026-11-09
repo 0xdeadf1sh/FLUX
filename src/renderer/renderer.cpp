@@ -66,13 +66,26 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
 
     ///////////////////////////////////////////////////////////////////////////
-    static void framebufferResizeCallback(GLFWwindow*   window,
-                                          [[maybe_unused]] int32_t width,
-                                          [[maybe_unused]] int32_t height)
+    static void framebufferResizeCallback(GLFWwindow*               window,
+                                          [[maybe_unused]] int32_t  width,
+                                          [[maybe_unused]] int32_t  height)
     {
         bool* resizeFlag{ reinterpret_cast<bool*>(glfwGetWindowUserPointer(window)) };
         assert(resizeFlag != nullptr);
         *resizeFlag = true;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    static void keyboardCallback(GLFWwindow*                window,
+                                 int32_t                    key,
+                                 [[maybe_unused]] int32_t   scancode,
+                                 int32_t                    action,
+                                 [[maybe_unused]] int32_t   mods)
+    {
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+        {
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+        }
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -102,6 +115,7 @@ namespace flux
 
         glfwSetWindowUserPointer(m_window.m_window, &m_framebufferResized);
         glfwSetFramebufferSizeCallback(m_window.m_window, framebufferResizeCallback);
+        glfwSetKeyCallback(m_window.m_window, keyboardCallback);
 
         spdlog::info("opened a GLFW window: w = {}, h = {}", m_windowWidth,
                                                              m_windowHeight);
