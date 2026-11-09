@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.hpp"
+#include "../../buffer.hpp"
 
 namespace flux::pipelines::graphics
 {
@@ -9,10 +10,24 @@ namespace flux::pipelines::graphics
     {
     public:
         ///////////////////////////////////////////////////////////////////////////
-        ////////////////////////////// CTOR/DTOR //////////////////////////////////
+        ///////////////////// UNIFORM BUFFER TYPE ALIAS ///////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        basic(const vk::raii::Device& device,
-              const vk::PipelineRenderingCreateInfo& renderInfo);
+        using ubo_float_type = vk_buffer<float,
+                                         vk::BufferUsageFlagBits::eUniformBuffer,
+                                         vma::AllocationCreateFlagBits::eHostAccessSequentialWrite>;
+
+        ///////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////// CTOR //////////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+        basic(const vk::raii::Device&                                       device,
+              const vk::PipelineRenderingCreateInfo&                        renderInfo,
+              const vk::raii::DescriptorPool&                               descriptorPool,
+              const std::vector<std::reference_wrapper<ubo_float_type>>&    ubos,
+              uint32_t                                                      framesInFlight);
+
+        ///////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////// DTOR //////////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
         ~basic() {}
 
         ///////////////////////////////////////////////////////////////////////////

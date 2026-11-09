@@ -12,6 +12,10 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
+#include <glm/mat4x4.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
 #include <cstring>
 #include <vector>
 #include <cassert>
@@ -37,11 +41,6 @@ namespace flux
         createSwapchainImageViews();
 
         ///////////////////////////////////////////////////////////////////////////
-        //////////////////////////// GRAPHICS PIPELINES ///////////////////////////
-        ///////////////////////////////////////////////////////////////////////////
-        createGraphicsPipelines();
-
-        ///////////////////////////////////////////////////////////////////////////
         /////////////////////////// VULKAN COMMAND OBJECTS ////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         createCommandPool();
@@ -49,11 +48,22 @@ namespace flux
         createCommandBuffers();
 
         ///////////////////////////////////////////////////////////////////////////
+        ////////////////////////////// DESCRIPTOR POOL ////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+        createDescriptorPool();
+
+        ///////////////////////////////////////////////////////////////////////////
         ////////////////////////////////// BUFFERS ////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         createAllocator();
         createVertexBuffer();
         createIndexBuffer();
+        createUniformBuffers();
+
+        ///////////////////////////////////////////////////////////////////////////
+        //////////////////////////// GRAPHICS PIPELINES ///////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+        createGraphicsPipelines();
 
         ///////////////////////////////////////////////////////////////////////////
         ///////////////////////// SYNCHRONIZATION OBJECTS /////////////////////////
@@ -769,7 +779,23 @@ namespace flux
             .pColorAttachmentFormats    = &m_swapchainSurfaceFormat.format,
         };
 
-        m_graphicsPipelines.init(m_device, renderInfo);
+        using ubo_type = vk_buffer<float,
+                                   vk::BufferUsageFlagBits::eUniformBuffer,
+                                   vma::AllocationCreateFlagBits::eHostAccessSequentialWrite>;
+
+        std::vector<std::reference_wrapper<ubo_type>> uboRefs{};
+        uboRefs.reserve(m_ubos.size());
+
+        for (const std::unique_ptr<ubo_type>& ubo : m_ubos)
+        {
+            uboRefs.push_back(*ubo.get());
+        }
+
+        m_graphicsPipelines.init(m_device,
+                                 renderInfo,
+                                 m_descriptorPool,
+                                 uboRefs,
+                                 m_framesInFlight);
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -808,6 +834,8 @@ namespace flux
                 vertices
             }
         };
+
+        spdlog::info("created a vertex buffer");
     }
 
     ///////////////////////////////////////////////////////////////////////////
@@ -835,7 +863,76 @@ namespace flux
                 indices
             }
         };
+
+        spdlog::info("created an index buffer");
     }
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::createUniformBuffers()
+    {
+        constexpr vk::BufferUsageFlags uboFlags
+        { vk::BufferUsageFlagBits::eUniformBuffer };
+
+        constexpr vma::AllocationCreateFlagBits uboMemory
+        { vma::AllocationCreateFlagBits::eHostAccessSequentialWrite };
+
+        using ubo_data_type     = float;
+        using ubo_buffer_type   = vk_buffer<ubo_data_type, uboFlags, uboMemory>;
+
+        m_ubos.reserve(m_framesInFlight);
+
+        for (uint32_t i{}; i < m_framesInFlight; ++i)
+        {
+            m_ubos.push_back
+            (
+                std::unique_ptr<ubo_buffer_type>
+                {
+                    new ubo_buffer_type
+                    {
+                        m_vma,
+                        m_memoryCmdPool,
+                        m_device,
+                        m_graphicsQueue,
+                        sizeof(glm::mat4)
+                    }
+                }
+            );
+
+            updateUniformBuffers(i);
+        }
+
+        spdlog::info("created {} uniform buffers", m_ubos.size());
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    ///////////////////////////// DESCRIPTOR POOL /////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////
+
+    ///////////////////////////////////////////////////////////////////////////
+    void renderer::createDescriptorPool()
+    {
+        const vk::DescriptorPoolSize poolSize
+        {
+            .type               = vk::DescriptorType::eUniformBuffer,
+            .descriptorCount    = m_framesInFlight,
+        };
+
+        const vk::DescriptorPoolCreateInfo poolInfo
+        {
+            .flags              = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+            .maxSets            = m_framesInFlight,
+            .poolSizeCount      = 1,
+            .pPoolSizes         = &poolSize,
+        };
+
+        m_descriptorPool = vk::raii::DescriptorPool(m_device, poolInfo);
+
+        spdlog::info("created a descriptor pool for {} descriptors", poolSize.descriptorCount);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    ///////////////////////////// VULKAN COMMANDS /////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////
 
     ///////////////////////////////////////////////////////////////////////////
     void renderer::createAllocator()
@@ -852,10 +949,6 @@ namespace flux
                      vk::apiVersionMajor(VK_API_VERSION_1_4),
                      vk::apiVersionMinor(VK_API_VERSION_1_4));
     }
-
-    ///////////////////////////////////////////////////////////////////////////
-    ///////////////////////////// VULKAN COMMANDS /////////////////////////////
-    ///////////////////////////////////////////////////////////////////////////
 
     ///////////////////////////////////////////////////////////////////////////
     void renderer::createCommandPool()
@@ -943,6 +1036,14 @@ namespace flux
     }
 
     ///////////////////////////////////////////////////////////////////////////
+    void renderer::updateUniformBuffers(uint32_t frameIndex)
+    {
+        glm::mat4 identity(1.0f);
+        std::span<const float, 16> data{ glm::value_ptr(identity), 16 };
+        m_ubos[frameIndex]->fill(data);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
     void renderer::recordCommandBuffers(uint32_t imageIndex)
     {
         assert(m_cmdBuffers.size() > 0);
@@ -987,7 +1088,9 @@ namespace flux
         };
 
         cmdBuffer.beginRendering(renderInfo);
-        m_graphicsPipelines.bind(pipelines::graphics::name::basic, cmdBuffer);
+        m_graphicsPipelines.bind(pipelines::graphics::name::basic,
+                                 cmdBuffer,
+                                 m_frameIndex);
         m_vbo->bind(cmdBuffer);
         m_ebo->bind(cmdBuffer);
         cmdBuffer.setViewport(0, vk::Viewport(0.0f,
@@ -1091,6 +1194,7 @@ namespace flux
         m_device.resetFences(*m_inFlightFences[m_frameIndex]);
 
         m_cmdBuffers[m_frameIndex].reset();
+        updateUniformBuffers(m_frameIndex);
         recordCommandBuffers(imageIndex);
 
         constexpr vk::PipelineStageFlags waitDestinationStageFlag

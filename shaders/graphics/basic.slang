@@ -10,11 +10,18 @@ struct VSOutput
     float3 color;
 };
 
+struct Transform
+{
+    float4x4 pvm;
+};
+
+ConstantBuffer<Transform> ubo;
+
 [shader("vertex")]
 VSOutput vmain(VSInput input)
 {
     VSOutput output;
-    output.position = float4(input.position, 1.0);
+    output.position = mul(ubo.pvm, float4(input.position, 1.0));
     output.color = input.color;
     return output;
 }

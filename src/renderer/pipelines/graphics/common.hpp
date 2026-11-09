@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../../buffer.hpp"
+
 #include <vulkan/vulkan_raii.hpp>
 
 #include <string_view>
@@ -23,6 +25,13 @@ namespace flux::pipelines::graphics
     {
     public:
         ///////////////////////////////////////////////////////////////////////////
+        /////////////////////////// UNIFORM BUFFER TYPES //////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+        using ubo_float_type = vk_buffer<float,
+                                         vk::BufferUsageFlagBits::eUniformBuffer,
+                                         vma::AllocationCreateFlagBits::eHostAccessSequentialWrite>;
+
+        ///////////////////////////////////////////////////////////////////////////
         ////////////////////////////// VIRTUAL DTOR ///////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         virtual ~common() {};
@@ -40,10 +49,29 @@ namespace flux::pipelines::graphics
         common& operator=(common&&)             = default;
 
         ///////////////////////////////////////////////////////////////////////////
-        ////////////////////////////////// GETTERS ////////////////////////////////
+        ////////////////////////////////// BINDING ////////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+
         ///////////////////////////////////////////////////////////////////////////
         void bind(const vk::raii::CommandBuffer& cmdBuffer) const
         {
+            cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                   *m_pipeline);
+        }
+
+        ///////////////////////////////////////////////////////////////////////////
+        void bind(const vk::raii::CommandBuffer&    cmdBuffer,
+                  uint32_t                          frameIndex) const
+        {
+            if (!m_descriptorSets.empty())
+            {
+                cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                             m_layout,
+                                             0,
+                                             *m_descriptorSets[frameIndex],
+                                             nullptr);
+            }
+
             cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
                                    *m_pipeline);
         }
@@ -60,21 +88,23 @@ namespace flux::pipelines::graphics
         virtual void change() = 0;
 
         ///////////////////////////////////////////////////////////////////////////
-        ////////////////// CHILDREN CALL THIS TO CREATE PIPELINE //////////////////
+        ////////////// CHILDREN CALL ONE OF THESE TO CREATE PIPELINE //////////////
+        ///////////////////////////////////////////////////////////////////////////
+
         ///////////////////////////////////////////////////////////////////////////
         void create(const vk::raii::Device&                 device,
                     const vk::PipelineRenderingCreateInfo&  renderInfo);
 
         ///////////////////////////////////////////////////////////////////////////
-        ////////////////////////////////// DEFAULTS ///////////////////////////////
-        ///////////////////////////////////////////////////////////////////////////
+        void create(const vk::raii::Device&                 device,
+                    const vk::PipelineRenderingCreateInfo&  renderInfo,
+                    const vk::raii::DescriptorPool&         descriptorPool,
+                    const std::vector<std::reference_wrapper<ubo_float_type>>&,
+                    uint32_t                                framesInFlight);
 
         ///////////////////////////////////////////////////////////////////////////
-        vk::PipelineLayoutCreateInfo m_layoutInfo
-        {
-            .setLayoutCount             = 0,
-            .pushConstantRangeCount     = 0,
-        };
+        ////////////////////////////////// DEFAULTS ///////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
 
         ///////////////////////////////////////////////////////////////////////////
         std::optional<vk::PipelineShaderStageCreateInfo> m_vertexShaderStageInfo{};
@@ -93,6 +123,9 @@ namespace flux::pipelines::graphics
         ///////////////////////////////////////////////////////////////////////////
         std::vector<vk::VertexInputBindingDescription> m_vertexInputBindings        {};
         std::vector<vk::VertexInputAttributeDescription> m_vertexAttribDescriptions {};
+
+        ///////////////////////////////////////////////////////////////////////////
+        std::vector<vk::DescriptorSetLayoutBinding> m_descriptorBindings {};
 
         ///////////////////////////////////////////////////////////////////////////
         vk::PipelineInputAssemblyStateCreateInfo m_inputAssembly
@@ -140,6 +173,44 @@ namespace flux::pipelines::graphics
 
     private:
         ///////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////// HELPERS ////////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+
+        ///////////////////////////////////////////////////////////////////////////
+        void createDescriptorSetLayout(const vk::raii::Device&);
+
+        ///////////////////////////////////////////////////////////////////////////
+        void createDescriptorSets(const vk::raii::Device&,
+                                  const vk::raii::DescriptorPool&,
+                                  uint32_t);
+
+        ///////////////////////////////////////////////////////////////////////////
+        void configureDescriptorSets(const vk::raii::Device& device,
+                                     const std::vector<std::reference_wrapper<ubo_float_type>>&,
+                                     uint32_t);
+
+        ///////////////////////////////////////////////////////////////////////////
+        void createPipelineLayout(const vk::raii::Device& device);
+
+        ///////////////////////////////////////////////////////////////////////////
+        std::pair<vk::raii::ShaderModule,
+                  std::vector<vk::PipelineShaderStageCreateInfo>>
+        createShaderStages(const vk::raii::Device&);
+
+        ///////////////////////////////////////////////////////////////////////////
+        vk::PipelineDynamicStateCreateInfo createDynamicStateInfo();
+
+        ///////////////////////////////////////////////////////////////////////////
+        vk::PipelineVertexInputStateCreateInfo createVertexInputState();
+
+        ///////////////////////////////////////////////////////////////////////////
+        void createPipeline(const std::vector<vk::PipelineShaderStageCreateInfo>&,
+                            const vk::PipelineDynamicStateCreateInfo&,
+                            const vk::PipelineVertexInputStateCreateInfo&,
+                            const vk::PipelineRenderingCreateInfo&,
+                            const vk::raii::Device&);
+
+        ///////////////////////////////////////////////////////////////////////////
         ////////////////////////////// SPIRV BYTECODE /////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         std::string m_bytecodeURL                           {};
@@ -148,6 +219,8 @@ namespace flux::pipelines::graphics
         ///////////////////////////////////////////////////////////////////////////
         ///////////////////////////// PIPELINE OBJECTS ////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
+        vk::raii::DescriptorSetLayout m_descriptorSetLayout { nullptr };
+        std::vector<vk::raii::DescriptorSet> m_descriptorSets{};
         vk::raii::PipelineLayout m_layout                   { nullptr };
         vk::raii::Pipeline m_pipeline                       { nullptr };
     };
@@ -165,5 +238,8 @@ namespace flux::pipelines::graphics
     ///////////////////////////////////////////////////////////////////////////
     std::unique_ptr<common> create(name,
                                    const vk::raii::Device&,
-                                   const vk::PipelineRenderingCreateInfo&);
+                                   const vk::PipelineRenderingCreateInfo&,
+                                   const vk::raii::DescriptorPool&,
+                                   const std::vector<std::reference_wrapper<common::ubo_float_type>>&,
+                                   uint32_t);
 }

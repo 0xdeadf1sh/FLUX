@@ -41,7 +41,24 @@ namespace flux
         static constexpr vma::MemoryUsage m_memoryUsage             { MemoryUsage };
 
         ///////////////////////////////////////////////////////////////////////////
-        ///////////////////////////////// CTOR ////////////////////////////////////
+        ////////////////////////// CTOR (WITHOUT DATA) ////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+        vk_buffer(vma::raii::Allocator&            allocator,
+                  const vk::raii::CommandPool&     cmdPool,
+                  const vk::raii::Device&          device,
+                  const vk::raii::Queue&           queue,
+                  vk::DeviceSize                   bufferSizeInBytes)
+
+            : m_bufferSizeInBytes               { bufferSizeInBytes }
+            , m_allocator                       { allocator }
+            , m_cmdPool                         { cmdPool }
+            , m_device                          { device }
+            , m_queue                           { queue }
+
+        { /* lazy instantiation */ }
+
+        ///////////////////////////////////////////////////////////////////////////
+        //////////////////////////// CTOR (WITH DATA) /////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
         vk_buffer(vma::raii::Allocator&            allocator,
                   const vk::raii::CommandPool&     cmdPool,
@@ -222,59 +239,58 @@ namespace flux
             return isVertexBuffer() || isIndexBuffer();
         }
 
-    private:
         ///////////////////////////////////////////////////////////////////////////
-        ///////////////////////////////// FILLING /////////////////////////////////
-        ///////////////////////////////////////////////////////////////////////////
+        const vk::raii::Buffer& getBuffer() const
+        {
+            return m_buffer;
+        }
 
         ///////////////////////////////////////////////////////////////////////////
-        vma::raii::Buffer create();
+        vk::DeviceSize getSizeInBytes() const
+        {
+            return m_bufferSizeInBytes;
+        }
+
+        ///////////////////////////////////////////////////////////////////////////
+        ///////////////////////////// FILLING WITH DATA ///////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
 
         ///////////////////////////////////////////////////////////////////////////
         void fill(std::span<const T> data)
         {
             assert(!data.empty());
 
-            m_buffer = create();
+            if (!*m_buffer)
+            {
+                m_buffer = create();
+            }
 
             if constexpr (isDeviceLocal())
             {
-                static_assert(isTransferDestinationBuffer(),
-                              "copied-to vk_buffer must be a destination vk_buffer!");
-
-                vk_buffer
-                <
-                    T,
-                    vk::BufferUsageFlagBits::eTransferSrc,
-                    vma::AllocationCreateFlagBits::eHostAccessSequentialWrite
-                >
-                stagingBuffer
-                {
-                    m_allocator,
-                    m_cmdPool,
-                    m_device,
-                    m_queue,
-                    data
-                };
-
-                copy(m_buffer, stagingBuffer.m_buffer);
-
-                spdlog::info("copied {} bytes from CPU to GPU buffer", m_bufferSizeInBytes);
+                fillDeviceLocal(data);
+            }
+            else if constexpr (isUniformBuffer())
+            {
+                fillUniformBuffer(data);
             }
             else
             {
-                static_assert(isTransferSourceBuffer(),
-                              "copied-from vk_buffer must be a source vk_buffer!");
-
-                static_assert(isMappableBuffer(),
-                              "copied-from vk_buffer must be a mappable vk_buffer!");
-
-                const vma::raii::Allocation& alloc{ m_buffer.getAllocation() };
-                alloc.copyFromMemory(data.data(), {}, m_bufferSizeInBytes);
-
-                spdlog::info("copied {} bytes from RAM to CPU vk_buffer", m_bufferSizeInBytes);
+                fillStagingBuffer(data);
             }
         }
+
+    private:
+        ///////////////////////////////////////////////////////////////////////////
+        ///////////////////////////// CREATING BUFFER /////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+        vma::raii::Buffer create();
+
+        ///////////////////////////////////////////////////////////////////////////
+        //////////////////////////// FILLING WITH DATA ////////////////////////////
+        ///////////////////////////////////////////////////////////////////////////
+        void fillDeviceLocal(std::span<const T> data);
+        void fillUniformBuffer(std::span<const T> data);
+        void fillStagingBuffer(std::span<const T> data);
 
         ///////////////////////////////////////////////////////////////////////////
         /////////////////////////////// COPYING DATA //////////////////////////////
@@ -373,5 +389,87 @@ namespace flux
 
         m_queue.get().submit(submitInfo, nullptr);
         m_queue.get().waitIdle();
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    //////////////////////////// FILLING WITH DATA ////////////////////////////
+    ///////////////////////////////////////////////////////////////////////////
+
+    ///////////////////////////////////////////////////////////////////////////
+    template <typename                          T,
+              vk::BufferUsageFlags              UsageFlags,
+              vma::AllocationCreateFlags        AllocFlags,
+              vma::MemoryUsage                  MemoryUsage>
+
+    void vk_buffer<T, UsageFlags, AllocFlags, MemoryUsage>::fillDeviceLocal
+    (
+        std::span<const T> data
+    )
+    {
+        static_assert(isTransferDestinationBuffer(),
+                      "device-local buffer must be transfer dst!");
+
+        vk_buffer
+        <
+            T,
+            vk::BufferUsageFlagBits::eTransferSrc,
+            vma::AllocationCreateFlagBits::eHostAccessSequentialWrite
+        >
+        stagingBuffer
+        {
+            m_allocator,
+            m_cmdPool,
+            m_device,
+            m_queue,
+            data
+        };
+
+        copy(m_buffer, stagingBuffer.m_buffer);
+
+        spdlog::info("copied {} bytes from CPU to GPU buffer", m_bufferSizeInBytes);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    template <typename                          T,
+              vk::BufferUsageFlags              UsageFlags,
+              vma::AllocationCreateFlags        AllocFlags,
+              vma::MemoryUsage                  MemoryUsage>
+
+    void vk_buffer<T, UsageFlags, AllocFlags, MemoryUsage>::fillUniformBuffer
+    (
+        std::span<const T> data
+    )
+    {
+        static_assert(isMappableBuffer(),
+                      "uniform buffer must be a mappable vk_buffer!");
+
+        const vma::raii::Allocation& alloc{ m_buffer.getAllocation() };
+        alloc.copyFromMemory(data.data(), {}, m_bufferSizeInBytes);
+
+        // uniform buffers are updated frequently, so we don't need to log copies
+        // spdlog::info("copied {} bytes from RAM to uniform buffer", m_bufferSizeInBytes);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    template <typename                          T,
+              vk::BufferUsageFlags              UsageFlags,
+              vma::AllocationCreateFlags        AllocFlags,
+              vma::MemoryUsage                  MemoryUsage>
+
+    void vk_buffer<T, UsageFlags, AllocFlags, MemoryUsage>::fillStagingBuffer
+    (
+        std::span<const T> data
+    )
+    {
+        static_assert(isTransferSourceBuffer(),
+                      "staging buffer must be a source vk_buffer!");
+
+        static_assert(isMappableBuffer(),
+                      "staging buffer must be a mappable vk_buffer!");
+
+        const vma::raii::Allocation& alloc{ m_buffer.getAllocation() };
+        alloc.copyFromMemory(data.data(), {}, m_bufferSizeInBytes);
+
+        spdlog::info("copied {} bytes from RAM to CPU vk_buffer", m_bufferSizeInBytes);
     }
 }
