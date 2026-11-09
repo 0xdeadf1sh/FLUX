@@ -758,7 +758,14 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
     void renderer::createVertexBuffer()
     {
-        using vboDataType = float;
+        constexpr vk::BufferUsageFlags vboFlags
+        {
+            vk::BufferUsageFlagBits::eVertexBuffer |
+            vk::BufferUsageFlagBits::eTransferDst
+        };
+
+        using vboDataType   = float;
+        using vboBuffer     = buffer<vboDataType, vboFlags>;
 
         const std::vector<vboDataType> vertices
         {
@@ -769,15 +776,9 @@ namespace flux
              0.5f,  0.5f, 0.0f,         0.0f, 1.0f, 1.0f,
         };
 
-        constexpr vk::BufferUsageFlags vboFlags
+        m_vbo = std::unique_ptr<vboBuffer>
         {
-            vk::BufferUsageFlagBits::eVertexBuffer |
-            vk::BufferUsageFlagBits::eTransferDst
-        };
-
-        m_vbo = std::unique_ptr<buffer<vboDataType, vboFlags>>
-        {
-            new buffer<vboDataType, vboFlags>
+            new vboBuffer
             {
                 m_vma,
                 m_memoryCmdPool,
@@ -791,19 +792,20 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
     void renderer::createIndexBuffer()
     {
-        using eboDataType = uint32_t;
-
-        const std::vector<eboDataType> indices{ 0, 1, 2, 2, 1, 3 };
-
         constexpr vk::BufferUsageFlags eboFlags
         {
             vk::BufferUsageFlagBits::eIndexBuffer |
             vk::BufferUsageFlagBits::eTransferDst
         };
 
-        m_ebo = std::unique_ptr<buffer<eboDataType, eboFlags>>
+        using eboDataType   = uint32_t;
+        using eboBuffer     = buffer<eboDataType, eboFlags>;
+
+        const std::vector<eboDataType> indices{ 0, 1, 2, 2, 1, 3 };
+
+        m_ebo = std::unique_ptr<eboBuffer>
         {
-            new buffer<eboDataType, eboFlags>
+            new eboBuffer
             {
                 m_vma,
                 m_memoryCmdPool,

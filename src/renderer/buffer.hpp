@@ -8,7 +8,8 @@
 
 #include <functional>
 #include <type_traits>
-#include <ranges>
+#include <span>
+#include <cassert>
 
 namespace flux
 {
@@ -20,6 +21,18 @@ namespace flux
     class buffer
     {
     public:
+
+        /// NOTE: different flags mean a different type, so we need a friend
+        /// declaration to grant access across instantiations
+        template
+        <
+            typename,
+            vk::BufferUsageFlags,
+            vma::AllocationCreateFlags,
+            vma::MemoryUsage
+        >
+        friend class buffer;
+
         ///////////////////////////////////////////////////////////////////////////
         /////////////////////////////// CONSTANTS /////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
@@ -30,14 +43,13 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         ///////////////////////////////// CTOR ////////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        template <std::ranges::input_range      InputRange>
         buffer(vma::raii::Allocator&            allocator,
                const vk::raii::CommandPool&     cmdPool,
                const vk::raii::Device&          device,
                const vk::raii::Queue&           queue,
-               const InputRange&                data)
+               std::span<const T>               data)
 
-            : m_bufferSizeInBytes               { sizeof(T) * data.size() }
+            : m_bufferSizeInBytes               { data.size_bytes() }
             , m_allocator                       { allocator }
             , m_cmdPool                         { cmdPool }
             , m_device                          { device }
@@ -52,10 +64,10 @@ namespace flux
         ~buffer()                               {};
 
         ///////////////////////////////////////////////////////////////////////////
-        ///////////////////////////// DELETED MOVE ////////////////////////////////
+        ///////////////////////////// DEFAULTED MOVE //////////////////////////////
         /////////////////////////////////////////////////////////////////////////// 
-        buffer(buffer&&)                        = delete;
-        buffer& operator=(buffer&&)             = delete;
+        buffer(buffer&&)                        = default;
+        buffer& operator=(buffer&&)             = default;
 
         ///////////////////////////////////////////////////////////////////////////
         ////////////////////////////// CUSTOM COPY ////////////////////////////////
@@ -77,6 +89,8 @@ namespace flux
             , m_device                          { other.m_device }
             , m_queue                           { other.m_queue }
         {
+            assert(*other.m_buffer);
+
             static_assert(isTransferDestinationBuffer(),
                           "copied-to buffer must be destination buffer!");
 
@@ -84,7 +98,7 @@ namespace flux
                           "copied-from buffer must be source buffer!");
 
             m_buffer = create();
-            copy(m_buffer, other.getBuffer());
+            copy(m_buffer, other.m_buffer);
         }
 
         ///////////////////////////////////////////////////////////////////////////
@@ -97,16 +111,21 @@ namespace flux
                                        OtherAllocFlags,
                                        OtherMemoryUsage>& other)
         {
+            assert(*other.m_buffer);
+            assert(m_bufferSizeInBytes == other.m_bufferSizeInBytes);
+
             static_assert(isTransferDestinationBuffer(),
                           "copied-to buffer must be destination buffer!");
 
             static_assert(other.isTransferSourceBuffer(),
                           "copied-from buffer must be source buffer!");
 
-            assert(m_bufferSizeInBytes == other.getBufferSizeInBytes());
+            if (!*m_buffer)
+            {
+                m_buffer = create();
+            }
 
-            m_buffer = create();
-            copy(m_buffer, other.getBuffer());
+            copy(m_buffer, other.m_buffer);
 
             return *this;
         }
@@ -126,7 +145,7 @@ namespace flux
             }
             else
             {
-                throw std::runtime_error{"bind is not implemented for this buffer type!"};
+                static_assert(false, "bind isn't defined for this type of buffer!");
             }
         }
 
@@ -190,26 +209,17 @@ namespace flux
             {
                 return vk::IndexType::eUint32;
             }
-
-            return vk::IndexType::eNoneKHR;
+            else
+            {
+                static_assert(false, "index buffers aren't defined for this type!");
+                return {};
+            }
         }
 
         ///////////////////////////////////////////////////////////////////////////
         constexpr bool isDeviceLocal() const
         {
             return isVertexBuffer() || isIndexBuffer();
-        }
-
-        ///////////////////////////////////////////////////////////////////////////
-        vk::DeviceSize getBufferSizeInBytes() const
-        {
-            return m_bufferSizeInBytes;
-        }
-
-        ///////////////////////////////////////////////////////////////////////////
-        const vma::raii::Buffer& getBuffer() const
-        {
-            return m_buffer;
         }
 
     private:
@@ -221,9 +231,10 @@ namespace flux
         vma::raii::Buffer create();
 
         ///////////////////////////////////////////////////////////////////////////
-        template <std::ranges::input_range InputRange>
-        void fill(const InputRange& data)
+        void fill(std::span<const T> data)
         {
+            assert(!data.empty());
+
             m_buffer = create();
 
             if constexpr (isDeviceLocal())
@@ -231,9 +242,12 @@ namespace flux
                 static_assert(isTransferDestinationBuffer(),
                               "copied-to buffer must be a destination buffer!");
 
-                buffer<T,
-                       vk::BufferUsageFlagBits::eTransferSrc,
-                       vma::AllocationCreateFlagBits::eHostAccessSequentialWrite>
+                buffer
+                <
+                    T,
+                    vk::BufferUsageFlagBits::eTransferSrc,
+                    vma::AllocationCreateFlagBits::eHostAccessSequentialWrite
+                >
                 stagingBuffer
                 {
                     m_allocator,
@@ -243,7 +257,7 @@ namespace flux
                     data
                 };
 
-                *this = stagingBuffer;
+                copy(m_buffer, stagingBuffer.m_buffer);
 
                 spdlog::info("copied {} bytes from CPU to GPU buffer", m_bufferSizeInBytes);
             }
@@ -256,7 +270,7 @@ namespace flux
                               "copied-from buffer must be a mappable buffer!");
 
                 const vma::raii::Allocation& alloc{ m_buffer.getAllocation() };
-                alloc.copyFromMemory(&data[0], {}, m_bufferSizeInBytes);
+                alloc.copyFromMemory(data.data(), {}, m_bufferSizeInBytes);
 
                 spdlog::info("copied {} bytes from RAM to CPU buffer", m_bufferSizeInBytes);
             }
@@ -271,7 +285,7 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         ////////////////////////////////// VMA ////////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        const vk::DeviceSize m_bufferSizeInBytes                {};
+        vk::DeviceSize m_bufferSizeInBytes                      {};
         vma::raii::Buffer m_buffer                              { nullptr };
 
         ///////////////////////////////////////////////////////////////////////////
@@ -305,7 +319,7 @@ namespace flux
         constexpr vma::AllocationCreateInfo allocInfo
         {
             AllocFlags,
-            vma::MemoryUsage::eAuto,
+            MemoryUsage,
         };
 
         return m_allocator.get().createBuffer(bufferInfo, allocInfo);
