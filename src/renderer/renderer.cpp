@@ -758,7 +758,9 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
     void renderer::createVertexBuffer()
     {
-        const std::vector<float> vertices
+        using vboDataType = float;
+
+        const std::vector<vboDataType> vertices
         {
             // position                     color
             -0.5f, -0.5f, 0.0f,         1.0f, 0.0f, 0.0f,
@@ -767,17 +769,20 @@ namespace flux
              0.5f,  0.5f, 0.0f,         0.0f, 1.0f, 1.0f,
         };
 
-        m_vbo = std::unique_ptr<buffer<float>>
+        constexpr vk::BufferUsageFlags vboFlags
         {
-            new buffer
+            vk::BufferUsageFlagBits::eVertexBuffer |
+            vk::BufferUsageFlagBits::eTransferDst
+        };
+
+        m_vbo = std::unique_ptr<buffer<vboDataType, vboFlags>>
+        {
+            new buffer<vboDataType, vboFlags>
             {
                 m_vma,
                 m_memoryCmdPool,
                 m_device,
                 m_graphicsQueue,
-                vk::BufferUsageFlagBits::eTransferDst |
-                vk::BufferUsageFlagBits::eVertexBuffer,
-                {},
                 vertices
             }
         };
@@ -786,19 +791,24 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
     void renderer::createIndexBuffer()
     {
-        const std::vector<uint32_t> indices{ 0, 1, 2, 2, 1, 3 };
+        using eboDataType = uint32_t;
 
-        m_ebo = std::unique_ptr<buffer<uint32_t>>
+        const std::vector<eboDataType> indices{ 0, 1, 2, 2, 1, 3 };
+
+        constexpr vk::BufferUsageFlags eboFlags
         {
-            new buffer
+            vk::BufferUsageFlagBits::eIndexBuffer |
+            vk::BufferUsageFlagBits::eTransferDst
+        };
+
+        m_ebo = std::unique_ptr<buffer<eboDataType, eboFlags>>
+        {
+            new buffer<eboDataType, eboFlags>
             {
                 m_vma,
                 m_memoryCmdPool,
                 m_device,
                 m_graphicsQueue,
-                vk::BufferUsageFlagBits::eTransferDst |
-                vk::BufferUsageFlagBits::eIndexBuffer,
-                {},
                 indices
             }
         };
