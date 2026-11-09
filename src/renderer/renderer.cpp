@@ -1038,8 +1038,23 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
     void renderer::updateUniformBuffers(uint32_t frameIndex)
     {
-        glm::mat4 identity(1.0f);
-        std::span<const float, 16> data{ glm::value_ptr(identity), 16 };
+        const float aspectRatio
+        {
+            static_cast<float>(m_swapchainExtent.width) /
+            static_cast<float>(m_swapchainExtent.height)
+        };
+
+        static float rotZ{};
+
+        glm::mat4 pvm{ glm::perspective(glm::radians(90.0f), aspectRatio, 0.1f, 10.0f) *
+                       glm::lookAt(glm::vec3(0.0f, 0.0f, 1.0f),
+                                   glm::vec3(0.0f, 0.0f, 0.0f),
+                                   glm::vec3(0.0f, 1.0f, 0.0f)) *
+                       glm::rotate(glm::mat4(1.0f), rotZ, glm::vec3(0.0f, 0.0f, 1.0f)) };
+
+        rotZ += 0.001f;
+
+        std::span<const float, 16> data{ glm::value_ptr(pvm), 16 };
         m_ubos[frameIndex]->fill(data);
     }
 
