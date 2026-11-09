@@ -18,7 +18,7 @@ namespace flux
               vk::BufferUsageFlags              UsageFlags,
               vma::AllocationCreateFlags        AllocFlags  = {},
               vma::MemoryUsage                  MemoryUsage = vma::MemoryUsage::eAuto>
-    class buffer
+    class vk_buffer
     {
     public:
 
@@ -31,7 +31,7 @@ namespace flux
             vma::AllocationCreateFlags,
             vma::MemoryUsage
         >
-        friend class buffer;
+        friend class vk_buffer;
 
         ///////////////////////////////////////////////////////////////////////////
         /////////////////////////////// CONSTANTS /////////////////////////////////
@@ -43,11 +43,11 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         ///////////////////////////////// CTOR ////////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        buffer(vma::raii::Allocator&            allocator,
-               const vk::raii::CommandPool&     cmdPool,
-               const vk::raii::Device&          device,
-               const vk::raii::Queue&           queue,
-               std::span<const T>               data)
+        vk_buffer(vma::raii::Allocator&            allocator,
+                  const vk::raii::CommandPool&     cmdPool,
+                  const vk::raii::Device&          device,
+                  const vk::raii::Queue&           queue,
+                  std::span<const T>               data)
 
             : m_bufferSizeInBytes               { data.size_bytes() }
             , m_allocator                       { allocator }
@@ -61,13 +61,13 @@ namespace flux
         ///////////////////////////////////////////////////////////////////////////
         ///////////////////////////////// DTOR ////////////////////////////////////
         ///////////////////////////////////////////////////////////////////////////
-        ~buffer()                               {};
+        ~vk_buffer()                               {};
 
         ///////////////////////////////////////////////////////////////////////////
         ///////////////////////////// DEFAULTED MOVE //////////////////////////////
         /////////////////////////////////////////////////////////////////////////// 
-        buffer(buffer&&)                        = default;
-        buffer& operator=(buffer&&)             = default;
+        vk_buffer(vk_buffer&&)                        = default;
+        vk_buffer& operator=(vk_buffer&&)             = default;
 
         ///////////////////////////////////////////////////////////////////////////
         ////////////////////////////// CUSTOM COPY ////////////////////////////////
@@ -78,10 +78,10 @@ namespace flux
                   vma::AllocationCreateFlags    OtherAllocFlags,
                   vma::MemoryUsage              OtherMemoryUsage>
 
-        buffer(const buffer<T,
-                            OtherUsageFlags,
-                            OtherAllocFlags,
-                            OtherMemoryUsage>&  other)
+        vk_buffer(const vk_buffer<T,
+                                  OtherUsageFlags,
+                                  OtherAllocFlags,
+                                  OtherMemoryUsage>&  other)
 
             : m_bufferSizeInBytes               { other.m_bufferSizeInBytes }
             , m_allocator                       { other.m_allocator }
@@ -92,10 +92,10 @@ namespace flux
             assert(*other.m_buffer);
 
             static_assert(isTransferDestinationBuffer(),
-                          "copied-to buffer must be destination buffer!");
+                          "copied-to vk_buffer must be destination vk_buffer!");
 
             static_assert(other.isTransferSourceBuffer(),
-                          "copied-from buffer must be source buffer!");
+                          "copied-from vk_buffer must be source vk_buffer!");
 
             m_buffer = create();
             copy(m_buffer, other.m_buffer);
@@ -106,19 +106,19 @@ namespace flux
                   vma::AllocationCreateFlags    OtherAllocFlags,
                   vma::MemoryUsage              OtherMemoryUsage>
 
-        buffer& operator=(const buffer<T,
-                                       OtherUsageFlags,
-                                       OtherAllocFlags,
-                                       OtherMemoryUsage>& other)
+        vk_buffer& operator=(const vk_buffer<T,
+                                             OtherUsageFlags,
+                                             OtherAllocFlags,
+                                             OtherMemoryUsage>& other)
         {
             assert(*other.m_buffer);
             assert(m_bufferSizeInBytes == other.m_bufferSizeInBytes);
 
             static_assert(isTransferDestinationBuffer(),
-                          "copied-to buffer must be destination buffer!");
+                          "copied-to vk_buffer must be destination vk_buffer!");
 
             static_assert(other.isTransferSourceBuffer(),
-                          "copied-from buffer must be source buffer!");
+                          "copied-from vk_buffer must be source vk_buffer!");
 
             if (!*m_buffer)
             {
@@ -145,7 +145,7 @@ namespace flux
             }
             else
             {
-                static_assert(false, "bind isn't defined for this type of buffer!");
+                static_assert(false, "bind isn't defined for this type of vk_buffer!");
             }
         }
 
@@ -240,9 +240,9 @@ namespace flux
             if constexpr (isDeviceLocal())
             {
                 static_assert(isTransferDestinationBuffer(),
-                              "copied-to buffer must be a destination buffer!");
+                              "copied-to vk_buffer must be a destination vk_buffer!");
 
-                buffer
+                vk_buffer
                 <
                     T,
                     vk::BufferUsageFlagBits::eTransferSrc,
@@ -264,15 +264,15 @@ namespace flux
             else
             {
                 static_assert(isTransferSourceBuffer(),
-                              "copied-from buffer must be a source buffer!");
+                              "copied-from vk_buffer must be a source vk_buffer!");
 
                 static_assert(isMappableBuffer(),
-                              "copied-from buffer must be a mappable buffer!");
+                              "copied-from vk_buffer must be a mappable vk_buffer!");
 
                 const vma::raii::Allocation& alloc{ m_buffer.getAllocation() };
                 alloc.copyFromMemory(data.data(), {}, m_bufferSizeInBytes);
 
-                spdlog::info("copied {} bytes from RAM to CPU buffer", m_bufferSizeInBytes);
+                spdlog::info("copied {} bytes from RAM to CPU vk_buffer", m_bufferSizeInBytes);
             }
         }
 
@@ -307,7 +307,7 @@ namespace flux
               vma::AllocationCreateFlags    AllocFlags,
               vma::MemoryUsage              MemoryUsage>
 
-    vma::raii::Buffer buffer<T, UsageFlags, AllocFlags, MemoryUsage>::create()
+    vma::raii::Buffer vk_buffer<T, UsageFlags, AllocFlags, MemoryUsage>::create()
     {
         const vk::BufferCreateInfo bufferInfo
         {
@@ -335,7 +335,7 @@ namespace flux
               vma::AllocationCreateFlags        AllocFlags,
               vma::MemoryUsage                  MemoryUsage>
 
-    void buffer<T, UsageFlags, AllocFlags, MemoryUsage>::copy
+    void vk_buffer<T, UsageFlags, AllocFlags, MemoryUsage>::copy
     (
         const vma::raii::Buffer& dstBuffer,
         const vma::raii::Buffer& srcBuffer
