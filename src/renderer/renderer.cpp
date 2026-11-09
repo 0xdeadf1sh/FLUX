@@ -66,6 +66,12 @@ namespace flux
     ///////////////////////////////////////////////////////////////////////////
 
     ///////////////////////////////////////////////////////////////////////////
+    static void windowErrorCallback(int32_t code, const char* msg)
+    {
+        spdlog::error("GLFW ERROR ({}): {}", code, msg);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
     static void framebufferResizeCallback(GLFWwindow*               window,
                                           [[maybe_unused]] int32_t  width,
                                           [[maybe_unused]] int32_t  height)
@@ -95,6 +101,7 @@ namespace flux
         spdlog::warn("running in DEBUG mode");
 #endif
 
+        glfwSetErrorCallback(windowErrorCallback);
         if (!glfwInit())
         {
             throw std::runtime_error{"glfwInit() failed!"};
